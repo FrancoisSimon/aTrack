@@ -14,7 +14,111 @@ import pandas as pd
 dtype = 'float64'
 clipping_value = np.log(1e-40)
 
-class Brownian_Initial_layer(keras.layers.Layer):
+def read_table(paths, # path of the file to read or list of paths to read multiple files.
+               lengths = np.arange(5,40), # number of positions per track accepted (take the first position if longer than max
+               dist_th = np.inf, # maximum distance allowed for consecutive positions 
+               frames_boundaries = [-np.inf, np.inf], # min and max frame values allowed for peak detection
+               fmt = 'csv', # format of the document to be red, 'csv' or 'pkl', one can also just specify a separator e.g. ' '. 
+               colnames = ['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],  # if multiple columns are required to identify a track, the string used to identify the track ID can be replaced by a list of strings represening the column names e.g. ['TRACK_ID', 'Movie_ID']
+               opt_colnames = [], # list of additional metrics to collect e.g. ['QUALITY', 'ID']
+               remove_no_disp = True):
+    
+    if type(paths) == str or type(paths) == np.str_:
+        paths = [paths]
+
+    tracks = {}
+    frames = {}
+    opt_metrics = {}
+    for m in opt_colnames:
+        opt_metrics[m] = {}
+    nb_peaks = 0
+    for l in lengths:
+        tracks[str(l)] = []
+        frames[str(l)] = []
+        for m in opt_colnames:
+            opt_metrics[m][str(l)] = []
+    
+    for path in paths:
+        
+        if fmt == 'csv':
+            data = pd.read_csv(path, sep=',')
+        elif fmt == 'pkl':
+            data = pd.read_pickle(path)
+        else:
+            data = pd.read_csv(path, sep = fmt)
+        
+        if not (type(colnames[3]) == str or type(colnames[3]) == np.str_):
+            # in this case we remove the NA values for simplicity
+            None_ID = (data[colnames[3]] == 'None') + pd.isna(data[colnames[3]])
+            data = data.drop(data[np.any(None_ID,1)].index)
+                
+            new_ID = data[colnames[3][0]].astype(str)
+            
+            for k in range(1,len(colnames[3])):
+                new_ID = new_ID + '_' + data[colnames[3][k]].astype(str)
+            data['unique_ID'] = new_ID
+            colnames[3] = 'unique_ID'        
+        try:
+            # in this case, peaks without an ID are assumed alone and are added a unique ID, only works if ID are integers
+            None_ID = (data[colnames[3]] == 'None' ) + pd.isna(data[colnames[3]])
+            max_ID = np.max(data[colnames[3]][(data[colnames[3]] != 'None' ) * (pd.isna(data[colnames[3]]) == False)].astype(int))
+            data.loc[None_ID, colnames[3]] = np.arange(max_ID+1, max_ID+1 + np.sum(None_ID))
+        except:
+            None_ID = (data[colnames[3]] == 'None' ) + pd.isna(data[colnames[3]])
+            data = data.drop(data[None_ID].index)
+        
+        data = data[colnames + opt_colnames]
+        
+        zero_disp_tracks = 0
+            
+        try:
+            for ID, track in data.groupby(colnames[3]):
+                
+                track = track.sort_values(colnames[2], axis = 0)
+                track_mat = track.values[:,:3].astype('float64')
+                dists = np.sum((track_mat[1:, :2] - track_mat[:-1, :2])**2, axis = 1)**0.5
+                if track_mat[0, 2] >= frames_boundaries[0] and track_mat[0, 2] <= frames_boundaries[1] : #and np.all(dists<dist_th):
+                    if not np.any(dists>dist_th):
+                        
+                        if np.any([len(track_mat)]*len(lengths) == np.array(lengths)):
+                            l = len(track)
+                            tracks[str(l)].append(track_mat[:, 0:2])
+                            frames[str(l)].append(track_mat[:, 2])
+                            for m in opt_colnames:
+                                opt_metrics[m][str(l)].append(track[m].values)
+        
+                        elif len(track_mat) > np.max(lengths):
+                            l = np.max(lengths)
+                            tracks[str(l)].append(track_mat[:l, 0:2])
+                            frames[str(l)].append(track_mat[:l, 2])
+                            for m in opt_colnames:
+                                opt_metrics[m][str(l)].append(track[m].values[:l]) 
+                        
+                        elif len(track_mat) < np.max(lengths) and len(track_mat) > np.min(lengths) : # in case where lengths between min(lengths) and max(lentghs) are not all present:
+                            l_idx =   np.argmin(np.floor(len(track_mat) / lengths))-1
+                            l = lengths[l_idx]
+                            tracks[str(l)].append(track_mat[:l, 0:2])
+                            frames[str(l)].append(track_mat[:l, 2])
+        except :
+            print('problem with file :', path)
+        
+    for l in list(tracks.keys()):
+        if len(tracks[str(l)])>0:
+            print(l)
+            tracks[str(l)] = np.array(tracks[str(l)])
+            frames[str(l)] = np.array(frames[str(l)])
+            for m in opt_colnames:
+                opt_metrics[m][str(l)] = np.array(opt_metrics[m][str(l)])
+        else:
+            del tracks[str(l)], frames[str(l)]
+            for k, m in enumerate(opt_colnames):
+                del opt_metrics[m][str(l)]        
+                    
+    if zero_disp_tracks and not remove_no_disp:
+        print('Warning: some tracks show no displacements. To be checked if normal or not. These tracks can be removed with remove_no_disp = True')
+    return tracks, frames, opt_metrics
+
+class Brownian_Initial_layer(tf.keras.layers.Layer):
     def __init__(
         self,
         Fixed_LocErr,
@@ -26,7 +130,6 @@ class Brownian_Initial_layer(keras.layers.Layer):
         super().__init__(**kwargs)
        
     def build(self, input_shape):
-        print(input_shape)
         self.Logd2 = tf.Variable(np.full((input_shape[0], 1), 2*np.log(self.Initial_params['d'])), dtype = dtype, name = 'Logd2', constraint=lambda x: tf.clip_by_value(x, clipping_value, np.inf))
         self.LogLocErr2 = tf.Variable(np.full((input_shape[0], 1), 2*np.log(self.Initial_params['LocErr'])), dtype = dtype, name = 'LogLocErr2', trainable = not self.Fixed_LocErr, constraint=lambda x: tf.clip_by_value(x, clipping_value, np.inf))
         self.built = True
@@ -34,7 +137,6 @@ class Brownian_Initial_layer(keras.layers.Layer):
     def call(self, inputs):
         init_mu = inputs[:,0] # initial most likely real postion
         init_s2 = tf.math.exp(self.LogLocErr2) + tf.math.exp(self.Logd2) # initial variance
-        print(inputs)
         init_LP = tf.zeros_like(inputs[:,:1,0])
         initial_state = [init_mu, init_s2, init_LP]
         return inputs, initial_state
@@ -77,7 +179,7 @@ class Brownian_RNNCell(tf.keras.layers.Layer):
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
-def Brownian_fit(tracks, nb_dims, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1}, nb_epochs = 400):
+def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1}, nb_epochs = 400):
     '''
     Fit single tracks to a model with diffusion (+ localizatione error). If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -100,14 +202,16 @@ def Brownian_fit(tracks, nb_dims, verbose = 0, Fixed_LocErr = True, Initial_para
     
     Returns
     -------
-    est_LocErrs: 
-        Estiamted localization errors for each state 
-    est_ds:
-        Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt)
-    LP: Log probability of each track according to the model.
+    pd_params: Log likelihood and model parameters in pandas format
+        est_LocErrs: 
+            Estiamted localization errors for each state 
+        est_ds:
+            Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt)
+        LP: Log probability of each track according to the model.
     '''
     
     nb_tracks = len(tracks)
+    nb_dims = tracks.shape[2]
     input_size = nb_dims
         
     inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
@@ -136,7 +240,10 @@ def Brownian_fit(tracks, nb_dims, verbose = 0, Fixed_LocErr = True, Initial_para
     
     LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     est_LocErrs, est_ds = model.layers[1].get_parameters()
-    return est_LocErrs, est_ds, LP
+    
+    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd'])
+        
+    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
 
 class Directed_Initial_layer(tf.keras.layers.Layer):
     def __init__(
@@ -363,17 +470,19 @@ def Directed_fit(tracks, nb_dims=2, verbose = 1, Fixed_LocErr = True, Initial_pa
     
     Returns
     -------
-    est_LocErrs: 
-        Estiamted localization errors for each state 
-    est_ds:
-        Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt)
-    est_qs: 
-        Estimated diffusion lengths per step of the potential well for each state.
-    est_ls:
-        Estiamted standard deviation of the initial speed of the particle.
-    pred_kis:
-        Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point)
-    LP: log probability of each track according to the model.
+    pd_params: Log likelihood and model parameters in pandas format
+        Log_likelihood: 
+            log probability of each track according to the model.
+        LocErr: 
+            Estiamted localization errors for each state 
+        d:
+            Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt)
+        q: 
+            Estimated diffusion lengths per step of the potential well for each state.
+        l:
+            Estiamted standard deviation of the initial speed of the particle.
+        mean_speed:
+            Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point)
     '''
     
     nb_tracks = len(tracks)
@@ -416,13 +525,16 @@ def Directed_fit(tracks, nb_dims=2, verbose = 1, Fixed_LocErr = True, Initial_pa
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
 
-    pred_LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
+    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     est_LocErrs, est_ds, est_qs, est_ls = layer1.get_parameters()
     
-    kis_model = keras.Model(inputs=inputs, outputs=kis, name="Diffusion_model")
+    kis_model = tf.keras.Model(inputs=inputs, outputs=kis, name="Diffusion_model")
     pred_kis = kis_model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
+    mean_pred_kis = np.mean(np.sum(pred_kis**2, axis=2)**0.5, axis=1, keepdims = True)
     
-    return est_LocErrs, est_ds, est_qs, est_ls, pred_LP, pred_kis
+    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
+        
+    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
 
 '''
 Confined diffusion
@@ -659,15 +771,18 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
         
     Returns
     -------
-    est_LocErrs: 
-        Estiamted localization errors for each state.
-    est_ds:
-        Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt).
-    est_qs: 
-        Estimated diffusion lengths per step of the potential well for each state.
-    est_ls:
-        Estiamted confinement factor of each particle.
-    LP: log probability of each track according to the model.
+    pd_params: pandas data frame
+        data frame containing the log likelihood and parameters of individual tracks
+        LP: 
+            log probability of each track according to the model.
+        est_LocErrs: 
+            Estiamted localization errors for each state.
+        est_ds:
+            Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt).
+        est_qs: 
+            Estimated diffusion lengths per step of the potential well for each state.
+        est_ls:
+            Estiamted confinement factor of each particle.
     '''
     
     nb_tracks = len(tracks)
@@ -703,8 +818,9 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
     LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     est_LocErrs, est_ds, est_qs, est_ls = model.layers[1].get_parameters()
     
-    return est_LocErrs, est_ds, est_qs, est_ls, LP
-
+    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l'])
+        
+    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
 
 class Brownian_Initial_layer_multi(tf.keras.layers.Layer):
     def __init__(
@@ -1403,7 +1519,7 @@ class Confinement_Final_layer_multi(tf.keras.layers.Layer):
     def sigmoid(self, x):
         return 1/(1+tf.math.exp(-x))
 
-def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, nb_epochs = 300, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}):
+def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, nb_epochs = 500, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}):
     '''
     Fit a population of tracks to a model with a number of states specified by `nb_states`.
     
@@ -1427,6 +1543,7 @@ def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, 
         The default is {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}.
         The parameters represent the localization errors, the diffusion lengths per step of the particle, 
         the diffusion lengths per step of the potential well and the confinement factors respectively.
+    
     Returns
     -------
     est_LocErrs: 
@@ -1537,7 +1654,7 @@ def Brownian_LP(inputs, nb_dims = 2, Fixed_LocErr = True, Initial_params = {'Loc
     LP = RNN_layer(tensor1[:,1:], initial_state = initial_state)
     return LP
 
-def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_nb_states = 15, nb_epochs = 1000, batch_size = 2**11,
+def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_nb_states = 15, nb_epochs = 100, batch_size = 2**11,
                Initial_confined_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                Initial_directed_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                ):
@@ -1878,10 +1995,6 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_n
         all_pd_params[str(nb_states)] = pd_params
         
     return likelihoods, all_pd_params
-
-
-
-
 
 
 
