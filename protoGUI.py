@@ -1,5 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Apr  9 16:44:43 2024
 
-
+@author: franc
+"""
 
 import os
 import tkinter as tk
