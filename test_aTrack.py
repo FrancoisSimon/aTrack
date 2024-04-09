@@ -4,15 +4,26 @@ Created on Tue Apr  9 15:31:11 2024
 
 @author: franc
 """
+
+import os
+file_PATH = os.path.realpath(__file__)
+#print('file_PATH: ', str(__file__))
+current_dir = file_PATH.rsplit(os.sep, 1)[0]
+print('current_dir: ', current_dir)
+os.chdir(current_dir)
+print('current dir', os.getcwd()) # get current directory
+
 import anomalous
 import numpy as np
 
 path = r'C:\Users\franc\OneDrive\Bureau\Anomalous\example_tracks.csv'
-savepath = r'C:\Users\franc\OneDrive\Bureau\Anomalous\'
+savepath = r'C:\Users\franc\OneDrive\Bureau\Anomalous\saved_results.csv'
 length = np.array([99])
 Fixed_LocErr = True
 Initial_params = {'LocErr': 0.02, 'd': 0.1}
 nb_epochs = 400
+
+print(os.path.realpath(__file__))
 
 tracks, frames, opt_metrics = anomalous.read_table(path, # path of the file to read or list of paths to read multiple files.
                lengths = length, # number of positions per track accepted (take the first position if longer than max
@@ -25,8 +36,6 @@ tracks, frames, opt_metrics = anomalous.read_table(path, # path of the file to r
 
 tracks = tracks['99']
 
-pd_params = anomalous.Brownian_fit(tracks, verbose = 0, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, nb_epochs = nb_epochs)
+pd_params = anomalous.Brownian_fit(tracks, verbose = 1, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, nb_epochs = nb_epochs)
 
-pd_params.to_csv(savedir)
-
-
+pd_params.to_csv(savepath)
