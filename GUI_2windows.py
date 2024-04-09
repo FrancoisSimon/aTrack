@@ -4,8 +4,8 @@ from tkinter import filedialog
 import anomalous
 import numpy as np
 
-padx = 10
-pady = 10
+padx = 10 # spacing between cells of the grid in x
+pady = 10 # spacing between cells of the grid in y
 
 def open_analysis_window():
     # Get user inputs from the first window
@@ -184,4 +184,7 @@ next_button = tk.Button(root, text="Next", command=open_analysis_window)
 next_button.grid(row=3, column=0, columnspan=3)
 
 root.mainloop()
+
+
+
 
