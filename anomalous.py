@@ -5,10 +5,8 @@ Created on Wed Apr  3 16:23:41 2024
 @author: franc
 """
 
-# -*- coding: utf-
 import numpy as np
 import tensorflow as tf
-import keras
 from tensorflow.keras.layers import RNN
 from sklearn.mixture import GaussianMixture
 import pandas as pd
@@ -112,14 +110,14 @@ def Brownian_fit(tracks, nb_dims, verbose = 0, Fixed_LocErr = True, Initial_para
     nb_tracks = len(tracks)
     input_size = nb_dims
         
-    inputs = keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+    inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
     layer1 = Brownian_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
     tensor1, initial_state = layer1(inputs)
     cell = Brownian_RNNCell([input_size, 1, 1], layer1, dtype = dtype) # n
     RNN_layer = tf.keras.layers.RNN(cell, dtype = dtype)
     outputs = RNN_layer(tensor1[:,1:], initial_state = initial_state)
     
-    model = keras.Model(inputs=inputs, outputs=outputs, name="Diffusion_model")
+    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Diffusion_model")
     if verbose > 0:
         model.summary()
         
@@ -140,7 +138,7 @@ def Brownian_fit(tracks, nb_dims, verbose = 0, Fixed_LocErr = True, Initial_para
     est_LocErrs, est_ds = model.layers[1].get_parameters()
     return est_LocErrs, est_ds, LP
 
-class Directed_Initial_layer(keras.layers.Layer):
+class Directed_Initial_layer(tf.keras.layers.Layer):
     def __init__(
         self,
         Fixed_LocErr,
@@ -280,7 +278,7 @@ class Directed_RNNCell(tf.keras.layers.Layer):
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
-class Directed_Final_layer(keras.layers.Layer):
+class Directed_Final_layer(tf.keras.layers.Layer):
 
     def __init__(self, parent, nb_dims, **kwargs):
         self.parent = parent
@@ -382,7 +380,7 @@ def Directed_fit(tracks, nb_dims=2, verbose = 1, Fixed_LocErr = True, Initial_pa
     input_size = nb_dims
     track_len = tracks.shape[1]
     if track_len > 4:
-        inputs = keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+        inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
         tensor1, initial_state = layer1(inputs, input_size)
         cell = Directed_RNNCell([1, 1, input_size, 1, 1, input_size, 1, input_size], layer1, input_size, dtype = dtype) # n
@@ -394,7 +392,7 @@ def Directed_fit(tracks, nb_dims=2, verbose = 1, Fixed_LocErr = True, Initial_pa
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
         LP = layer3(inputs[:,:], prev_outputs)
     elif track_len <= 4:
-        inputs = keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+        inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.1}, dtype = dtype)
         tensor1, initial_state = layer1(inputs, input_size)
         prev_outputs = initial_state
@@ -403,7 +401,7 @@ def Directed_fit(tracks, nb_dims=2, verbose = 1, Fixed_LocErr = True, Initial_pa
         LP = layer3(inputs[:,:], prev_outputs)
         kis = LP
     
-    model = keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
+    model = tf.keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
     if verbose > 0:
         model.summary()
     
@@ -431,7 +429,7 @@ Confined diffusion
 
 '''
 
-class Confinement_Initial_layer(keras.layers.Layer):
+class Confinement_Initial_layer(tf.keras.layers.Layer):
     def __init__(
         self,
         Fixed_LocErr,
@@ -589,7 +587,7 @@ class Confinement_RNNCell(tf.keras.layers.Layer):
     def sigmoid(self, x):
         return 1/(1+tf.math.exp(-x))
 
-class Confinement_Final_layer(keras.layers.Layer):
+class Confinement_Final_layer(tf.keras.layers.Layer):
 
     def __init__(self, parent, nb_dims, **kwargs):
         self.parent = parent
@@ -676,7 +674,7 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
     nb_dims = tracks.shape[2]
     input_size = nb_dims
     
-    inputs = keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+    inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
     layer1 = Confinement_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
     tensor1, initial_state = layer1(inputs, input_size)
     cell = Confinement_RNNCell([1, input_size, 1, 1, 1, input_size, input_size], layer1, input_size, dtype = dtype) # n
@@ -686,7 +684,7 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
     layer3 = Confinement_Final_layer(layer1, input_size, dtype = dtype)
     LP = layer3(inputs[:,-1], prev_outputs)
     
-    model = keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
+    model = tf.keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
     if verbose > 0:
         model.summary()
         
