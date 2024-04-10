@@ -447,7 +447,7 @@ class Directed_Final_layer(tf.keras.layers.Layer):
         return -0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
 #from keras.callbacks import LambdaCallback
-def Directed_fit(tracks, nb_dims=2, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400):
+def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400):
     '''
     Fit single tracks to a model with diffusion plus directed motion. If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -485,9 +485,8 @@ def Directed_fit(tracks, nb_dims=2, verbose = 1, Fixed_LocErr = True, Initial_pa
             Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point)
     '''
     
-    nb_tracks = len(tracks)
-    input_size = nb_dims
-    track_len = tracks.shape[1]
+    nb_tracks, track_len, nb_dims = tracks.shape
+
     if track_len > 4:
         inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
