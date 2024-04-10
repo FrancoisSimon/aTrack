@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Apr  3 16:23:41 2024
-
-@author: franc
+@author: Francois Simon
 """
 
 import numpy as np
@@ -397,7 +396,7 @@ class Directed_Final_layer(tf.keras.layers.Layer):
         if not self.built:
             self.parent.build(input_shape)
         self.built = True
-   
+    
     def call(self, inputs, states): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
         prev_output = states
         output = self.directed_motion_function(inputs, prev_output, self.nb_dims)
@@ -486,7 +485,7 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     '''
     
     nb_tracks, track_len, nb_dims = tracks.shape
-
+    
     if track_len > 4:
         inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
@@ -532,7 +531,7 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     mean_pred_kis = np.mean(np.sum(pred_kis**2, axis=2)**0.5, axis=1, keepdims = True)
     
     pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
-        
+    
     return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
 
 '''
