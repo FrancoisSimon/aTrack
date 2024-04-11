@@ -486,7 +486,7 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     
     nb_tracks, track_len, nb_dims = tracks.shape
     input_size = nb_dims
-
+    
     if track_len > 4:
         inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
@@ -1909,6 +1909,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_n
     final_fractions = tf.math.softmax(F_layer.weights).numpy()[:,0].T
     
     pd_params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'state', 'fraction'])
+    
     all_pd_params[str(nb_states)] = pd_params
     
     while nb_states > min_nb_states:
@@ -1992,23 +1993,11 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_n
         
         pd_params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'state', 'fraction'])
         all_pd_params[str(nb_states)] = pd_params
-        
+    
+    likelihoods = pd.DataFrame(np.array([np.arange(min_nb_states, max_nb_states+1), likelihoods[min_nb_states-1:]]).T, columns = ['number_of_states', 'Likelihood'])
+    likelihoods['number_of_states'] = likelihoods['number_of_states'].astype(int)
+
     return likelihoods, all_pd_params
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
