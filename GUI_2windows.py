@@ -422,12 +422,4 @@ next_button.grid(row=3, column=0, columnspan=3)
 root.mainloop()
 
 
-import pandas as pd
-a = pd.DataFrame(np.zeros((3,3)))
-
-a.to_csv(r'C:/Users/franc/Downloads/aTrack-main/aTrack-main/example_tracks.csv\saved_results_brownian.csv')
-
-
-
-
 
