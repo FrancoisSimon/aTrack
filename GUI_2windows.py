@@ -11,6 +11,9 @@ previous_window = None
 def open_analysis_window():
     global previous_window
     path = path_entry.get()
+    print(os.path.normpath(path))
+    savepath = os.path.normpath(path).rsplit(os.sep, 1)[0]
+    (os.sep, 1)[0]
     length = int(length_entry.get())
     analysis_type = analysis_type_var.get()
 
@@ -21,20 +24,20 @@ def open_analysis_window():
     analysis_window.title("Anomalous Analysis - {}".format(analysis_type))
 
     if analysis_type == 'Fitting single tracks in Brownian motion':
-        create_brownian_window(analysis_window, path, length)
+        create_brownian_window(analysis_window, path, savepath, length)
     elif analysis_type == 'Fitting single tracks in confined motion':
-        create_confined_window(analysis_window, path, length)
+        create_confined_window(analysis_window, path, savepath, length)
     elif analysis_type == 'Fitting single tracks in directed motion':
-        create_directed_window(analysis_window, path, length)
+        create_directed_window(analysis_window, path, savepath, length)
     elif analysis_type == 'Fitting model with multiple states':
-        create_multi_window(analysis_window, path, length)
+        create_multi_window(analysis_window, path, savepath, length)
 
 def go_to_previous_window(window):
     window.destroy()
     if previous_window:
         previous_window.deiconify()
 
-def create_brownian_window(window, path, length):
+def create_brownian_window(window, path, savepath, length):
 
     # Initial LocErr Input
     locerr_label = tk.Label(window, text="Initial Localization error:")
@@ -69,7 +72,7 @@ def create_brownian_window(window, path, length):
     savepath_label.grid(row=4, column=0, sticky = 'e', padx = padx, pady = pady)
     savepath_entry = tk.Entry(window, width=50)
     savepath_entry.grid(row=4, column=1)
-    savepath_entry.insert(tk.END, os.path.join(os.getcwd(), 'saved_results_brownian.csv'))
+    savepath_entry.insert(tk.END, os.path.join(savepath, 'saved_results_brownian.csv'))
 
     # Run Button
     run_button = tk.Button(window, text="Run Analysis", command=lambda: run_brownian_analysis(path, length, fixed_locerr_var.get(),
@@ -81,7 +84,7 @@ def create_brownian_window(window, path, length):
     previous_button = tk.Button(window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=5, column=0, columnspan=2)
 
-def create_confined_window(window, path, length):
+def create_confined_window(window, path, savepath, length):
 
     # Initial LocErr Input
     locerr_label = tk.Label(window, text="Initial Localization error:")
@@ -130,7 +133,7 @@ def create_confined_window(window, path, length):
     savepath_label.grid(row=6, column=0, sticky = 'e', padx = padx, pady = pady)
     savepath_entry = tk.Entry(window, width=50)
     savepath_entry.grid(row=6, column=1)
-    savepath_entry.insert(tk.END, os.path.join(os.getcwd(), 'saved_results_confined.csv'))
+    savepath_entry.insert(tk.END, os.path.join(savepath, 'saved_results_confined.csv'))
 
     # Run Button
     run_button = tk.Button(window, text="Run Analysis", command=lambda: run_confined_analysis(path, length, fixed_locerr_var.get(),
@@ -143,7 +146,7 @@ def create_confined_window(window, path, length):
     previous_button = tk.Button(window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=7, column=0, columnspan=2)
 
-def create_directed_window(window, path, length):
+def create_directed_window(window, path, savepath, length):
 
     # Initial LocErr Input
     locerr_label = tk.Label(window, text="Initial Localization error:")
@@ -192,7 +195,7 @@ def create_directed_window(window, path, length):
     savepath_label.grid(row=6, column=0, sticky = 'e', padx = padx, pady = pady)
     savepath_entry = tk.Entry(window, width=50)
     savepath_entry.grid(row=6, column=1)
-    savepath_entry.insert(tk.END, os.path.join(os.getcwd(), 'saved_results_directed.csv'))
+    savepath_entry.insert(tk.END, os.path.join(savepath, 'saved_results_directed.csv'))
 
     # Run Button
     run_button = tk.Button(window, text="Run Analysis", command=lambda: run_directed_analysis(path, length, fixed_locerr_var.get(),
@@ -205,7 +208,7 @@ def create_directed_window(window, path, length):
     previous_button = tk.Button(window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=7, column=0, columnspan=2)
 
-def create_multi_window(window, path, length):
+def create_multi_window(window, path, savepath, length):
 
     # Fixed LocErr Input
     fixed_locerr_label = tk.Label(window, text="Fixed LocErr:")
@@ -327,6 +330,7 @@ def run_brownian_analysis(path, length, fixed_locerr, locerr, d, nb_epochs, save
     tracks = tracks[str(length)]
     pd_params = anomalous.Brownian_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d}, nb_epochs=nb_epochs)
+    print(savepath)
     pd_params.to_csv(savepath)
     print("Brownian motion analysis completed and results saved to %s."%savepath)
 
@@ -361,16 +365,25 @@ def run_multi_analysis(path, length, fixed_locerr, min_nb_states, max_nb_states,
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
     tracks = tracks[str(length)]
-    pd_params = anomalous.multi_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr, min_nb_states=min_nb_states, max_nb_states=max_nb_states, nb_epochs=nb_epochs, batch_size=batch_size, 
+    likelihoods, all_pd_params = anomalous.multi_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr, min_nb_states=min_nb_states, max_nb_states=max_nb_states, nb_epochs=nb_epochs, batch_size=batch_size, 
                                     Initial_confined_params={'LocErr': confined_locerr, 'd': confined_d, 'q': confined_q, 'l': confined_l},
                                     Initial_directed_params={'LocErr': directed_locerr, 'd': directed_d, 'q': directed_q, 'l': directed_l}, 
                                     )
-    pd_params.to_csv(savepath)
+    
+    for nb_states in all_pd_params.keys():
+        pd_params = all_pd_params[nb_states]
+        pd_params.to_csv(savepath[:-4] + '_' + nb_states + savepath[-4:])
+        
+    likelihoods.to_csv(savepath[:-4] + '_likelihood' + savepath[-4:])
     print("Multiple states model analysis completed and results saved to %s."%savepath)
 
 # Create the first window
 root = tk.Tk()
 root.title("Anomalous Analysis Setup")
+
+def browser():
+    path_entry.delete(0,'end')
+    path_entry.insert(tk.END, filedialog.askopenfilename(initialdir=os.path.expanduser('~'), title="Select File"))
 
 # Path Input
 path_label = tk.Label(root, text="Path:")
@@ -378,9 +391,11 @@ path_label.grid(row=0, column=0)
 path_entry = tk.Entry(root, width=50)
 path_entry.grid(row=0, column=1)
 path_entry.insert(tk.END, os.getcwd())
-path_button = tk.Button(root, text="Browse", command=lambda: path_entry.insert(tk.END, filedialog.askopenfilename()))
+#path_button = tk.Button(root, text="Browse", command=lambda: path_entry.insert(tk.END, filedialog.askopenfilename()))
+#path_button = tk.Button(root, text="Browse", command=lambda: (path_entry.insert(tk.END, filedialog.askopenfilename(initialdir=os.path.expanduser('~'), title="Select File"))))
+path_button = tk.Button(root, text="Browse", command=browser)
 path_button.grid(row=0, column=2)
-
+dir(path_entry)
 # Length Input
 length_label = tk.Label(root, text="Length:")
 length_label.grid(row=1, column=0)
@@ -405,6 +420,13 @@ next_button = tk.Button(root, text="Next", command=open_analysis_window)
 next_button.grid(row=3, column=0, columnspan=3)
 
 root.mainloop()
+
+
+import pandas as pd
+a = pd.DataFrame(np.zeros((3,3)))
+
+a.to_csv(r'C:/Users/franc/Downloads/aTrack-main/aTrack-main/example_tracks.csv\saved_results_brownian.csv')
+
 
 
 
