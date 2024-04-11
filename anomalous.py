@@ -1972,7 +1972,9 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 5, max_n
         nb_states += -1
         likelihoods[nb_states-1] = sum_LP
         
-        print('current number of states: ', nb_states, ', current likelihood: ', likelihoods)
+        cur_likelihood_df = pd.DataFrame(np.array([np.arange(min_nb_states, max_nb_states+1), likelihoods[min_nb_states-1:]]).T, columns = ['number of states', 'Likelihood'], index = ['']*len(likelihoods[min_nb_states-1:]))
+        cur_likelihood_df['number of states'] = cur_likelihood_df['number of states'].astype(int)
+        print('current number of states: ', nb_states, ', likelihoods: \n', cur_likelihood_df.T)
         
         Init_layers = []
         for layer in model.layers:
