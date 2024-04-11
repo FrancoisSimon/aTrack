@@ -485,7 +485,8 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     '''
     
     nb_tracks, track_len, nb_dims = tracks.shape
-    
+    input_size = nb_dims
+
     if track_len > 4:
         inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
