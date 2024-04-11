@@ -178,7 +178,7 @@ class Brownian_RNNCell(tf.keras.layers.Layer):
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
-def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1}, nb_epochs = 400):
+def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1}, nb_epochs = 400, output_type = 'dict'):
     '''
     Fit single tracks to a model with diffusion (+ localizatione error). If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -240,9 +240,12 @@ def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
     LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     est_LocErrs, est_ds = model.layers[1].get_parameters()
     
-    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd'])
-        
-    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
+    if output_type == 'dict':
+        pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd'])
+        return pd_params
+    else:
+        return est_LocErrs, est_ds, LP
+
 
 class Directed_Initial_layer(tf.keras.layers.Layer):
     def __init__(
@@ -446,7 +449,7 @@ class Directed_Final_layer(tf.keras.layers.Layer):
         return -0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
 #from keras.callbacks import LambdaCallback
-def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400):
+def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict'):
     '''
     Fit single tracks to a model with diffusion plus directed motion. If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -531,9 +534,11 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     pred_kis = kis_model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     mean_pred_kis = np.mean(np.sum(pred_kis**2, axis=2)**0.5, axis=1, keepdims = True)
     
-    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
-    
-    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
+    if output_type == 'dict':
+        pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
+        return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
+    else:
+        return est_LocErrs, est_ds, est_qs, est_ls, LP, mean_pred_kis
 
 '''
 Confined diffusion
@@ -748,7 +753,7 @@ class Confinement_Final_layer(tf.keras.layers.Layer):
     def sigmoid(self, x):
         return 1/(1+tf.math.exp(-x))
 
-def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}, nb_epochs = 400):
+def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict'):
     '''
     Fit single tracks to a model with brownian diffusion and confinement. If a memory shortage occurs reduce the number of tracks analyzed at once.
     
@@ -817,9 +822,12 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
     LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     est_LocErrs, est_ds, est_qs, est_ls = model.layers[1].get_parameters()
     
-    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l'])
-        
-    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
+    if output_type == 'dict':
+        pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l'])
+        return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
+    else:
+        return est_LocErrs, est_ds, est_qs, est_ls, LP
+
 
 class Brownian_Initial_layer_multi(tf.keras.layers.Layer):
     def __init__(
@@ -966,16 +974,16 @@ def Brownian_fit_multi(tracks, nb_states = 3, verbose = 1, Fixed_LocErr = False,
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit(tf_tracks, tf_tracks, epochs = 30, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
-
+    
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
-
+    
     adam = tf.keras.optimizers.Adam(learning_rate=0.01, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
-
+    
     LPs = model.predict_on_batch(tf_tracks)
     
     sum_LP = MLE_loss(LPs, LPs)
@@ -1653,7 +1661,7 @@ def Brownian_LP(inputs, nb_dims = 2, Fixed_LocErr = True, Initial_params = {'Loc
     LP = RNN_layer(tensor1[:,1:], initial_state = initial_state)
     return LP
 
-def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_nb_states = 15, nb_epochs = 100, batch_size = 2**11,
+def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 5, max_nb_states = 8, nb_epochs = 50, batch_size = 2**11,
                Initial_confined_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                Initial_directed_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                ):
@@ -1700,15 +1708,12 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_n
     
     nb_tracks, track_len, nb_dims = tracks.shape
     
-    est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = nb_epochs)
-    est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = nb_epochs)
+    est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = nb_epochs, output_type = 'arrays')
+    est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = nb_epochs, output_type = 'arrays')
     
     mask = LP < LP2
     #mask = mask
     
-    LP[-20:]
-    LP2[-20:]
-
     est_LocErrs[mask] = est_LocErrs2[mask]
     est_ds[mask] = est_ds2[mask]
     est_qs[mask] = est_qs2[mask]
@@ -1919,7 +1924,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_n
         
         All_alternative_LPs = []
         Fractions = tf.math.softmax(F_layer.weights).numpy()[0]
-
+        
         for i in range(nb_states):
             #For each state compute the impact of removing it on the likelihood
             mask = np.full((nb_states), True, dtype=bool)
@@ -1972,7 +1977,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_n
         Init_layers = []
         for layer in model.layers:
             if 'confinement__initial_layer' in layer.name:
-                Init_layers.append(layer)   
+                Init_layers.append(layer)
         for layer in model.layers:
             if 'directed__initial_layer' in layer.name:
                 Init_layers.append(layer)
@@ -1989,22 +1994,14 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 3, max_n
         final_LocErr, final_d, final_q, final_l = LocErr[mask_history_args], d[mask_history_args], q[mask_history_args], l[mask_history_args]
         final_states = state_list[mask_history_args]
         final_l[final_states=='Dir'] =  final_l[final_states=='Dir']*2**0.5
-        final_fractions = tf.math.softmax(F_layer.weights)
+        final_fractions = tf.math.softmax(F_layer.weights).numpy()[:,0].T
         
         pd_params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'state', 'fraction'])
         all_pd_params[str(nb_states)] = pd_params
     
     likelihoods = pd.DataFrame(np.array([np.arange(min_nb_states, max_nb_states+1), likelihoods[min_nb_states-1:]]).T, columns = ['number_of_states', 'Likelihood'])
     likelihoods['number_of_states'] = likelihoods['number_of_states'].astype(int)
-
+    
     return likelihoods, all_pd_params
-
-
-
-
-
-
-
-
 
 
