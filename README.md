@@ -42,6 +42,10 @@ N/A values are not allowed
 ## From Windows using anaconda prompt:
 
 
+# Creating an executable file from the python code
+
+`pyinstaller --onefile --hidden-import=scipy.special._cdflib GUI_2windows.py`
+
 # Tutorial
 
 
