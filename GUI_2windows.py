@@ -1,7 +1,7 @@
+
 import os
 import tkinter as tk
 from tkinter import filedialog
-import anomalous
 import numpy as np
 from tkinter import ttk
 import webbrowser
@@ -59,7 +59,7 @@ def create_brownian_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                             frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                             colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                             remove_no_disp=True)
@@ -123,7 +123,7 @@ def create_confined_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
@@ -199,10 +199,11 @@ def create_directed_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
+    
     except Exception as e:
         root.withdraw()
         show_error_url(window, "The csv file could not be read correctly.\nVerify that your file has columns named: 'POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'\nFor more details, click here:", "https://github.com/FrancoisSimon/aTrack")
@@ -275,7 +276,7 @@ def create_multi_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
@@ -416,13 +417,13 @@ def create_multi_window(window, path, savepath, length):
 
 def run_brownian_analysis(path, length, fixed_locerr, locerr, d, nb_epochs, savepath):
     # Run the Brownian motion analysis
-    tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+    tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
     tracks = tracks[str(length)]
 
-    pd_params = anomalous.Brownian_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
+    pd_params = Brownian_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d}, nb_epochs=nb_epochs)
     print(savepath)
     pd_params.to_csv(savepath)
@@ -430,36 +431,36 @@ def run_brownian_analysis(path, length, fixed_locerr, locerr, d, nb_epochs, save
 
 def run_confined_analysis(path, length, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
     # Run the confined motion analysis
-    tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+    tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
     tracks = tracks[str(length)]
-    pd_params = anomalous.Confined_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
+    pd_params = Confined_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d, 'q': q, 'l': l}, nb_epochs=nb_epochs)
     pd_params.to_csv(savepath)
     print("Confined motion analysis completed and results saved to %s."%savepath)
 
 def run_directed_analysis(path, length, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
     # Run the directed motion analysis
-    tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+    tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
     tracks = tracks[str(length)]
-    pd_params = anomalous.Directed_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
+    pd_params = Directed_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d, 'q': q, 'l': l}, nb_epochs=nb_epochs)
     pd_params.to_csv(savepath)
     print("Directed motion analysis completed and results saved to %s."%savepath)
 
 def run_multi_analysis(path, length, fixed_locerr, min_nb_states, max_nb_states, confined_locerr, confined_d, confined_q, confined_l, directed_locerr, directed_d, directed_q, directed_l, nb_epochs, batch_size, savepath):
     # Run the multiple states analysis
-    tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+    tracks, _, _ = read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
     tracks = tracks[str(length)]
-    likelihoods, all_pd_params = anomalous.multi_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr, min_nb_states=min_nb_states, max_nb_states=max_nb_states, nb_epochs=nb_epochs, batch_size=batch_size, 
+    likelihoods, all_pd_params = multi_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr, min_nb_states=min_nb_states, max_nb_states=max_nb_states, nb_epochs=nb_epochs, batch_size=batch_size, 
                                     Initial_confined_params={'LocErr': confined_locerr, 'd': confined_d, 'q': confined_q, 'l': confined_l},
                                     Initial_directed_params={'LocErr': directed_locerr, 'd': directed_d, 'q': directed_q, 'l': directed_l}, 
                                     )
@@ -514,26 +515,5 @@ next_button = ttk.Button(root, text="Next", command=open_analysis_window)
 next_button.grid(row=3, column=0, columnspan=3)
 
 root.mainloop()
-
-
-
-from tkinter import *
-master = Tk()
-
-def var_states():
-   print("male: %d,\nfemale: %d" % (var1.get(), var2.get()))
-
-Label(master, text="Your sex:").grid(row=0, sticky=W)
-var1 = IntVar(master)
-Checkbutton(master, text="male", variable=var1).grid(row=1, sticky=W)
-var2 = IntVar(master)
-Checkbutton(master, text="female", variable=var2).grid(row=2, sticky=W)
-Button(master, text='Quit', command=master.quit).grid(row=3, sticky=W, pady=4)
-Button(master, text='Show', command=var_states).grid(row=4, sticky=W, pady=4)
-mainloop()
-
-
-
-
 
 
