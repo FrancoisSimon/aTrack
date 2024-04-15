@@ -27,11 +27,7 @@ to do: `pip install aTrack`
 
 ## Input file format
 
-aTrack needs csv files with rows that represent the peaks of the tracks and columns that must contain the following headers: ['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'].
-the columns 'POSITION_X' and 'POSITION_Y' must contain floats that represent the positions in the different dimensions of your track.
-'FRAME' must contain floats or integers ordered with regard to the time points of the tracks.
-'TRACK_ID' must contain integers that specify to which track the position belongs to.
-N/A values are not allowed
+aTrack needs csv files with rows that represent the peaks of the tracks and columns that must contain the following headers: ['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID']. The columns 'POSITION_X' and 'POSITION_Y' must contain floats that represent the positions in the different dimensions of your track. 'FRAME' must contain floats or integers ordered with regard to the time points of the tracks. 'TRACK_ID' must contain integers that specify to which track the position belongs to. N/A values are not allowed.
 
 # Installation from this GitHub repository
 
@@ -66,7 +62,7 @@ Outputs:
 - `pd_params`: Log likelihood and model parameters in pandas format
         Log_likelihood: log probability of each track according to the model.
         LocErr: Estiamted localization errors for each state 
-        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt)
+        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient $D = d^2/(2dt)$
         est_qs: Estimated diffusion lengths per step of the potential well for each state.
         est_ls: Estiamted confinement factor of each particle.
 
@@ -88,7 +84,7 @@ Outputs:
 - `pd_params`: Log likelihood and model parameters in pandas format
         Log_likelihood: log probability of each track according to the model.
         LocErr: Estiamted localization errors for each state 
-        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt)
+        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient $D = d^2/(2dt)$
         q: Estimated diffusion lengths per step of the potential well for each state.
         l: Estiamted standard deviation of the initial speed of the particle.
         mean_speed: Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point)
@@ -111,7 +107,7 @@ Outputs:
 - `pd_params`: Log likelihood and model parameters in pandas format
         Log_likelihood: log probability of each track according to the model.
         LocErr: Estiamted localization errors for each state 
-        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient D = d**2/(2dt)
+        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient $D = d^2/(2dt)$
         est_qs: Estimated diffusion lengths per step of the potential well for each state.
         est_ls: Estiamted confinement factor of each particle.
 
@@ -159,8 +155,6 @@ Outputs:
 
 
 ## Caveats
-
-# References
 
 # License
 This program is released under the GNU General Public License version 3 or upper (GPLv3+).
