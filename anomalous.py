@@ -1661,7 +1661,7 @@ def Brownian_LP(inputs, nb_dims = 2, Fixed_LocErr = True, Initial_params = {'Loc
     LP = RNN_layer(tensor1[:,1:], initial_state = initial_state)
     return LP
 
-def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 5, max_nb_states = 8, nb_epochs = 50, batch_size = 2**11,
+def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_nb_states = 15, nb_epochs = 1000, batch_size = 2**11,
                Initial_confined_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                Initial_directed_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                ):
