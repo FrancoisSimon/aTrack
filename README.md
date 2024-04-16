@@ -81,13 +81,13 @@ Arguments:
         directed motion and the standard deviation of the initial speed of the particle. 
 
 Outputs:
-- `pd_params`: Log likelihood and model parameters in pandas format
+- `pd_params`: Log likelihood and model parameters in pandas format.
         Log_likelihood: log probability of each track according to the model.
-        LocErr: Estiamted localization errors for each state 
-        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient $D = d^2/(2dt)$
+        LocErr: Estiamted localization errors for each state .
+        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient $D = d^2/(2dt)$.
         q: Estimated diffusion lengths per step of the potential well for each state.
         l: Estiamted standard deviation of the initial speed of the particle.
-        mean_speed: Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point)
+        mean_speed: Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point).
     
 ### Confined_fit
 
@@ -104,10 +104,10 @@ Arguments:
         directed motion and the standard deviation of the initial speed of the particle. 
 
 Outputs:
-- `pd_params`: Log likelihood and model parameters in pandas format
+- `pd_params`: Log likelihood and model parameters in pandas format.
         Log_likelihood: log probability of each track according to the model.
-        LocErr: Estiamted localization errors for each state 
-        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient $D = d^2/(2dt)$
+        LocErr: Estiamted localization errors for each state .
+        d: Estimated d, the diffusion length per step of the particle, for each state (the diffusion coefficient $D = d^2/(2dt)$.
         est_qs: Estimated diffusion lengths per step of the potential well for each state.
         est_ls: Estiamted confinement factor of each particle.
 
@@ -118,12 +118,10 @@ Fit models with multiple states and vary the number of states to determine which
 Arguments:
 - `tracks`: Numpy array of tracks of dims (track, time point, spatial axis).
 - `verbose`: if 1, the function prints the model summary and the fitting infos. The default is 1.
-- `Fixed_LocErr`: bool, optional
-    If True fixes the the localization error based on a prior estimate, this can be important to do if there is no immobile state. The default is True.
+- `Fixed_LocErr`: If True fixes the the localization error based on a prior estimate, this can be important to do if there is no immobile state. The default is True.
 - `max_nb_states`: Number of states used for the clustering. The number of states is iteratively reduced until reaching `min_nb_states`.
 - `min_nb_states`: Initial number of states used for the clustering.
-- `nb_epochs`: TYPE, optional
-    DESCRIPTION. The default is 1000.
+- `nb_epochs`: number of epochs for the model fitting. The default is 1000.
 - `batch_size`: Number of tracks considered per batch to avoid memory issues when dealing with big data sets.
 - `Initial_confined_params`: Initial guess for the first step of the method. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
 - `Initial_directed_params`: The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
