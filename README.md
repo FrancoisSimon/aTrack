@@ -171,7 +171,8 @@ This program is released under the GNU General Public License version 3 or upper
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # Parallelization
-GPU parallelization is made available thanks to the tensorflow library. When analyzing small data sets, using CPU computing may be faster.
+GPU parallelization is made available thanks to the tensorflow library. When analyzing small data sets, using CPU computing may be faster. To do so, one can use the following command `with tf.device('/CPU:0'):`.
+`
 
 # Deploying (developer only)
 
