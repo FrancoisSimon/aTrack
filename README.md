@@ -23,7 +23,7 @@ pip install scikit-learn 'tensorflow<2.11' pandas
 
 ## Install aTrack
 
-to do: `pip install aTrack`
+`pip install aTrack` (not working yet)
 
 ## Input file format
 
