@@ -175,6 +175,10 @@ GPU parallelization is made available thanks to the tensorflow library. When ana
 
 # Deploying (developer only)
 
+One can create an exectuable softare from the python code using:
+`pyinstaller --onedir --hidden-import=scipy.special._cdflib path\GUI_2windows.py`
+If anyone can make the Graphical interface work for linux or Mac Os. I will be happy to share this version as well on [Zenodo](https://zenodo.org/records/10994586).
+
 # Authors
 Francois Simon
 
