@@ -89,7 +89,7 @@ Outputs:
         l: Estiamted standard deviation of the initial speed of the particle.
         mean_speed: Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point).
     
-### Confined_fit
+### anomalous.Confined_fit
 
 Fit single tracks to a model with diffusion plus confinement while still considering localization error. If memory issues occur, split your data set into multiple arrays and perform a fitting on each array separately.
 
@@ -111,9 +111,9 @@ Outputs:
         est_qs: Estimated diffusion lengths per step of the potential well for each state.
         est_ls: Estiamted confinement factor of each particle.
 
-###
+### anomalous.multi_fit
 
-Fit models with multiple states and vary the number of states to determine which number of states is best suited to the data set and to retrieve the multi-state model parameters. More precisly, in a first fitting step, we estimate the parameters of individual tracks. We then cluster tracks with close parameters using a Gaussian mixute model to form `max_nb_states` states whose parameters are the average of the parameters of their tracks. Then, multi-state fitting is performed on the full data set. the log likelihood is computed and stored and the state with the lowest impact on the likelihood is removed. The number of states is further reduced until the number of states of the model reaches the value `min_nb_states`.
+Fit models with multiple states and vary the number of states to determine which number of states is best suited to the data set and to retrieve the multi-state model parameters. More precisely, in a first fitting step, we estimate the parameters of individual tracks. We then cluster tracks with close parameters using a Gaussian mixture model to form `max_nb_states` states whose parameters are the average of the parameters of their tracks. Then, multi-state fitting is performed on the full data set. the log likelihood is computed and stored and the state with the lowest impact on the likelihood is removed. The number of states is further reduced until the number of states of the model reaches the value `min_nb_states`.
 
 Arguments:
 - `tracks`: Numpy array of tracks of dims (track, time point, spatial axis).
@@ -132,7 +132,7 @@ Outputs:
 
 ## Extra functions
 
-### Function `extrack.readers.read_table`
+### Function `anomalous.read_table`
 
 The function anomalous.read_table can be used to upload files in csv format (also work for other table formats).
 
