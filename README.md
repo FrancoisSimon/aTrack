@@ -19,7 +19,7 @@ This readme file focuses on the python implementation of aTrack.
 
 ## Install dependencies
 
-pip install scikit-learn 'tensorflow<2.11' pandas
+pip install scikit-learn "tensorflow<2.11" pandas
 
 ## Install aTrack
 
