@@ -1,7 +1,7 @@
 aTrack
 -------
 
-aTrack is a method to detemine the state of motion of particles. The stand-alone version of aTrack is available at https://zenodo.org/records/10994586.
+aTrack is a method to detemine the state of motion of particles. The stand-alone version of aTrack is available at [https://zenodo.org/records/10994586](https://zenodo.org/records/11075336).
 For more information about the Stand-alone version of aTrack, see the [Wiki](https://github.com/FrancoisSimon/aTrack/wiki) section of this GitHub page.
 
 This readme file focuses on the python implementation of aTrack.
