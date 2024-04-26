@@ -346,32 +346,32 @@ def create_multi_window(window, path, savepath, length):
     frame1.grid_columnconfigure(1, weight=1)
 
     # Ajout de labels au cadre
-    label1 = ttk.Label(frame1, text="Initial Confined Inputs")
+    label1 = ttk.Label(frame1, text="Initial paramaters for the confined motion")
     label1.grid(row=0, column=0, columnspan=4, sticky="ew")
 
     # Initial Confined LocErr Input
-    confined_locerr_label = ttk.Label(frame1, text="Initial Confined Localization error:")
+    confined_locerr_label = ttk.Label(frame1, text="Initial Localization error for confined states:")
     confined_locerr_label.grid(row=6, column=0, sticky = 'e', padx = padx, pady = pady)
     confined_locerr_entry = ttk.Entry(frame1, width=10)
     confined_locerr_entry.grid(row=6, column=1)
     confined_locerr_entry.insert(tk.END, "0.02")
 
     # Initial Confined d Input
-    confined_d_label = ttk.Label(frame1, text="Initial diffusion length of the particle for confined fitting:")
+    confined_d_label = ttk.Label(frame1, text="Initial diffusion length of the particle for confined states:")
     confined_d_label.grid(row=7, column=0, sticky = 'e', padx = padx, pady = pady)
     confined_d_entry = ttk.Entry(frame1, width=10)
     confined_d_entry.grid(row=7, column=1)
     confined_d_entry.insert(tk.END, "0.1")
 
     # Initial Confined l Input
-    confined_l_label = ttk.Label(frame1, text="Initial confinement factor for confined fitting:")
+    confined_l_label = ttk.Label(frame1, text="Initial confinement factor for confined states:")
     confined_l_label.grid(row=8, column=0, sticky = 'e', padx = padx, pady = pady)
     confined_l_entry = ttk.Entry(frame1, width=10)
     confined_l_entry.grid(row=8, column=1)
     confined_l_entry.insert(tk.END, "0.01")
 
     # Initial Confined q Input
-    confined_q_label = ttk.Label(frame1, text="Initial diffusion length of the potential well for confined fitting:")
+    confined_q_label = ttk.Label(frame1, text="Initial diffusion length of the potential well for confined states:")
     confined_q_label.grid(row=9, column=0, sticky = 'e', padx = padx, pady = pady)
     confined_q_entry = ttk.Entry(frame1, width=10)
     confined_q_entry.grid(row=9, column=1)
@@ -383,32 +383,32 @@ def create_multi_window(window, path, savepath, length):
     frame2.grid_columnconfigure(1, weight=1)
 
     # Ajout de labels au cadre
-    label2 = ttk.Label(frame2, text="Initial Directed Inputs")
+    label2 = ttk.Label(frame2, text="Initial paramaters for the directed motion")
     label2.grid(row=0, column=0, columnspan=4, sticky="ew")
 
     # Initial Directed LocErr Input
-    directed_locerr_label = ttk.Label(frame2, text="Initial Directed Localization error:")
+    directed_locerr_label = ttk.Label(frame2, text="Initial Localization error for directed states:")
     directed_locerr_label.grid(row=6, column=2, sticky = 'e', padx = padx, pady = pady)
     directed_locerr_entry = ttk.Entry(frame2, width=10)
     directed_locerr_entry.grid(row=6, column=3)
     directed_locerr_entry.insert(tk.END, "0.02")
 
     # Initial Directed d Input
-    directed_d_label = ttk.Label(frame2, text="Initial diffusion length of the particle for directed fitting:")
+    directed_d_label = ttk.Label(frame2, text="Initial diffusion length of the particle for directed states:")
     directed_d_label.grid(row=7, column=2, sticky = 'e', padx = padx, pady = pady)
     directed_d_entry = ttk.Entry(frame2, width=10)
     directed_d_entry.grid(row=7, column=3)
     directed_d_entry.insert(tk.END, "0.1")
 
     # Initial Confined l Input
-    directed_l_label = ttk.Label(frame2, text="Initial confinement factor for directed fitting:")
+    directed_l_label = ttk.Label(frame2, text="Initial velocity for directed states:")
     directed_l_label.grid(row=8, column=2, sticky = 'e', padx = padx, pady = pady)
     directed_l_entry = ttk.Entry(frame2, width=10)
     directed_l_entry.grid(row=8, column=3)
     directed_l_entry.insert(tk.END, "0.01")
 
     # Initial Confined q Input
-    directed_q_label = ttk.Label(frame2, text="Initial diffusion length of the potential well for directed fitting:")
+    directed_q_label = ttk.Label(frame2, text="Initial change rate of velocity for directed states:")
     directed_q_label.grid(row=9, column=2, sticky = 'e', padx = padx, pady = pady)
     directed_q_entry = ttk.Entry(frame2, width=10)
     directed_q_entry.grid(row=9, column=3)
