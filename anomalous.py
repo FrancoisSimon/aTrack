@@ -449,7 +449,7 @@ class Directed_Final_layer(tf.keras.layers.Layer):
         return -0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
 #from keras.callbacks import LambdaCallback
-def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict'):
+def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400):
     '''
     Fit single tracks to a model with diffusion plus directed motion. If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -488,26 +488,27 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     '''
     
     nb_tracks, track_len, nb_dims = tracks.shape
-    input_size = nb_dims
+    
+    nb_dims 
     
     if track_len > 4:
-        inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+        inputs = tf.keras.Input(shape=(None, nb_dims), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
-        tensor1, initial_state = layer1(inputs, input_size)
-        cell = Directed_RNNCell([1, 1, input_size, 1, 1, input_size, 1, input_size], layer1, input_size, dtype = dtype) # n
+        tensor1, initial_state = layer1(inputs, nb_dims)
+        cell = Directed_RNNCell([1, 1, nb_dims, 1, 1, nb_dims, 1, nb_dims], layer1, nb_dims, dtype = dtype) # n
         RNN_layer = tf.keras.layers.RNN(cell, return_state = True, return_sequences=True, dtype = dtype)
         tensor2 = RNN_layer(tensor1[:,2:-2], initial_state = initial_state)
         kis = tensor2[1]
         prev_outputs = tensor2[2:]
-        layer3 = Directed_Final_layer(layer1, input_size, dtype = dtype)
+        layer3 = Directed_Final_layer(layer1, nb_dims, dtype = dtype)
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
         LP = layer3(inputs[:,:], prev_outputs)
     elif track_len <= 4:
-        inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+        inputs = tf.keras.Input(shape=(None, nb_dims), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.1}, dtype = dtype)
-        tensor1, initial_state = layer1(inputs, input_size)
+        tensor1, initial_state = layer1(inputs, nb_dims)
         prev_outputs = initial_state
-        layer3 = Directed_Final_layer(layer1, input_size, dtype = dtype)
+        layer3 = Directed_Final_layer(layer1, nb_dims, dtype = dtype)
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
         LP = layer3(inputs[:,:], prev_outputs)
         kis = LP
@@ -521,24 +522,22 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit(tracks[:nb_tracks,:,:nb_dims], tracks[:nb_tracks,:,:nb_dims], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit(tracks[:nb_tracks,:,:nb_dims], tracks[:nb_tracks,:,:nb_dims], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
 
-    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
+    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:nb_dims], dtype = dtype))
     est_LocErrs, est_ds, est_qs, est_ls = layer1.get_parameters()
     
     kis_model = tf.keras.Model(inputs=inputs, outputs=kis, name="Diffusion_model")
-    pred_kis = kis_model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
+    pred_kis = kis_model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:nb_dims], dtype = dtype))
     mean_pred_kis = np.mean(np.sum(pred_kis**2, axis=2)**0.5, axis=1, keepdims = True)
     
-    if output_type == 'dict':
-        pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
-        return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
-    else:
-        return est_LocErrs, est_ds, est_qs, est_ls, LP, mean_pred_kis
+    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
+        
+    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
 
 '''
 Confined diffusion
