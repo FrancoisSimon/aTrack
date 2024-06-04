@@ -10,11 +10,12 @@ from tensorflow.keras.layers import RNN
 from sklearn.mixture import GaussianMixture
 import pandas as pd
 
+tf.get_logger().setLevel('ERROR')
 dtype = 'float64'
 clipping_value = np.log(1e-40)
 
 def read_table(paths, # path of the file to read or list of paths to read multiple files.
-               lengths = np.arange(5,40), # number of positions per track accepted (take the first position if longer than max
+               lengths = np.arange(100,101), # number of positions per track accepted (take the first position if longer than max
                dist_th = np.inf, # maximum distance allowed for consecutive positions 
                frames_boundaries = [-np.inf, np.inf], # min and max frame values allowed for peak detection
                fmt = 'csv', # format of the document to be red, 'csv' or 'pkl', one can also just specify a separator e.g. ' '. 
@@ -449,7 +450,7 @@ class Directed_Final_layer(tf.keras.layers.Layer):
         return -0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
 #from keras.callbacks import LambdaCallback
-def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400):
+def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict'):
     '''
     Fit single tracks to a model with diffusion plus directed motion. If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -463,7 +464,7 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     Fixed_LocErr : bool, optional
         Fix the localization error to its initial value if True. The default is True.
     nb_epochs : int
-        Number of epochs for the model fitting. The default is 300.
+        Number of epochs for the model fitting. The default is 400.
     Initial_params : dict,
         Dictionary of the initial parameters. The values for each key must be a list of floats of length `nb_states`.
         The default is {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}.
@@ -488,27 +489,26 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     '''
     
     nb_tracks, track_len, nb_dims = tracks.shape
-    
-    nb_dims 
+    input_size = nb_dims
     
     if track_len > 4:
-        inputs = tf.keras.Input(shape=(None, nb_dims), batch_size = nb_tracks, dtype = dtype)
+        inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
-        tensor1, initial_state = layer1(inputs, nb_dims)
-        cell = Directed_RNNCell([1, 1, nb_dims, 1, 1, nb_dims, 1, nb_dims], layer1, nb_dims, dtype = dtype) # n
+        tensor1, initial_state = layer1(inputs, input_size)
+        cell = Directed_RNNCell([1, 1, input_size, 1, 1, input_size, 1, input_size], layer1, input_size, dtype = dtype) # n
         RNN_layer = tf.keras.layers.RNN(cell, return_state = True, return_sequences=True, dtype = dtype)
         tensor2 = RNN_layer(tensor1[:,2:-2], initial_state = initial_state)
         kis = tensor2[1]
         prev_outputs = tensor2[2:]
-        layer3 = Directed_Final_layer(layer1, nb_dims, dtype = dtype)
+        layer3 = Directed_Final_layer(layer1, input_size, dtype = dtype)
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
         LP = layer3(inputs[:,:], prev_outputs)
     elif track_len <= 4:
-        inputs = tf.keras.Input(shape=(None, nb_dims), batch_size = nb_tracks, dtype = dtype)
+        inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.1}, dtype = dtype)
-        tensor1, initial_state = layer1(inputs, nb_dims)
+        tensor1, initial_state = layer1(inputs, input_size)
         prev_outputs = initial_state
-        layer3 = Directed_Final_layer(layer1, nb_dims, dtype = dtype)
+        layer3 = Directed_Final_layer(layer1, input_size, dtype = dtype)
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
         LP = layer3(inputs[:,:], prev_outputs)
         kis = LP
@@ -522,22 +522,24 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:nb_dims], tracks[:nb_tracks,:,:nb_dims], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:nb_dims], tracks[:nb_tracks,:,:nb_dims], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
 
-    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:nb_dims], dtype = dtype))
+    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     est_LocErrs, est_ds, est_qs, est_ls = layer1.get_parameters()
     
     kis_model = tf.keras.Model(inputs=inputs, outputs=kis, name="Diffusion_model")
-    pred_kis = kis_model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:nb_dims], dtype = dtype))
+    pred_kis = kis_model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
     mean_pred_kis = np.mean(np.sum(pred_kis**2, axis=2)**0.5, axis=1, keepdims = True)
     
-    pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
-        
-    return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
+    if output_type == 'dict':
+        pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
+        return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
+    else:
+        return est_LocErrs, est_ds, est_qs, est_ls, LP, mean_pred_kis
 
 '''
 Confined diffusion
@@ -1697,8 +1699,6 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     Returns
     -------
     TYPE
-        
-
     '''
     
     all_pd_params = {}
@@ -1706,13 +1706,13 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     tracks = np.array(tracks)
     
     nb_tracks, track_len, nb_dims = tracks.shape
-    
+
     est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = nb_epochs, output_type = 'arrays')
     est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = nb_epochs, output_type = 'arrays')
     
     mask = LP < LP2
     #mask = mask
-    
+
     est_LocErrs[mask] = est_LocErrs2[mask]
     est_ds[mask] = est_ds2[mask]
     est_qs[mask] = est_qs2[mask]
@@ -1997,12 +1997,19 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         final_l[final_states=='Dir'] =  final_l[final_states=='Dir']*2**0.5
         final_fractions = tf.math.softmax(F_layer.weights).numpy()[:,0].T
         
-        pd_params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'state', 'fraction'])
+        pd_params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'type', 'fraction'])
         all_pd_params[str(nb_states)] = pd_params
     
     likelihoods = pd.DataFrame(np.array([np.arange(min_nb_states, max_nb_states+1), likelihoods[min_nb_states-1:]]).T, columns = ['number_of_states', 'Likelihood'])
     likelihoods['number_of_states'] = likelihoods['number_of_states'].astype(int)
     
     return likelihoods, all_pd_params
+
+
+
+
+
+
+
 
 
