@@ -1886,7 +1886,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     nb_states = LPs.shape[1]
     
     likelihoods = np.zeros(k)
-    likelihoods[nb_states-1] = np.median(history.history['loss'][-5:])
+    likelihoods[nb_states-1] = - np.median(history.history['loss'][-5:])
 
     Best_weights = model.get_weights()
 
