@@ -25,6 +25,12 @@ pip install scikit-learn "tensorflow<2.11" pandas
 
 `pip install aTrack` (not working yet)
 
+Alternatively, you can left-click on `code`, then `download zip`. Unzip the downloaded folder. In python, set the working directory to the location of the unzipped folder. The package is named atrack.
+
+`os.chdir(r'C:\Users\username\path\aTrack-main')
+import atrack
+`
+
 ## Input file format
 
 aTrack needs csv files with rows that represent the peaks of the tracks and columns that must contain the following headers: ['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID']. The columns 'POSITION_X' and 'POSITION_Y' must contain floats that represent the positions in the different dimensions of your track. 'FRAME' must contain floats or integers ordered with regard to the time points of the tracks. 'TRACK_ID' must contain integers that specify to which track the position belongs to. N/A values are not allowed.
@@ -35,11 +41,11 @@ aTrack needs csv files with rows that represent the peaks of the tracks and colu
 
 ## From Windows using anaconda prompt:
 
-`pip install aTrack`
+`pip install aTrack` (not working yet)
 
 # Tutorial
 
-**Document here how to open a Jupyter notebook**
+For an extensive tutorial, see the jupyter notebook at https://github.com/FrancoisSimon/aTrack/blob/main/aTrack_Tutorial.ipynb .
 
 # Usage
 ## Main functions
