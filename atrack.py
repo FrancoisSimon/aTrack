@@ -1745,7 +1745,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     denorm_centers = np.array(denorm_centers)
     n_clusters_ = k
     
-    print('reduction phase: phase where we test the clustered states and remove the states that do not significantly increase the likelihood. If no state is removed during this stage, increase the value of the parameter `initial_nb_states` (integer)')
+    print('reduction phase: phase where we test the clustered states and remove the states with the smallest impact on the likelihood.')
     
     #Conf_params = denorm_centers[:2]
     
@@ -1887,9 +1887,9 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     
     likelihoods = np.zeros(k)
     likelihoods[nb_states-1] = - np.median(history.history['loss'][-5:])
-
+    
     Best_weights = model.get_weights()
-
+    
     Init_layers = []
     for layer in model.layers:
         if 'confinement__initial_layer' in layer.name:
