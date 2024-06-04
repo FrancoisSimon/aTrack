@@ -6,7 +6,7 @@ print('tkinter',tk)
 
 from tkinter import ttk
 import webbrowser
-import anomalous
+import atrack
 
 #ttk = tk.ttk
 
@@ -64,7 +64,7 @@ def create_brownian_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                             frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                             colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                             remove_no_disp=True)
@@ -129,7 +129,7 @@ def create_confined_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
@@ -207,7 +207,7 @@ def create_directed_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
@@ -286,7 +286,7 @@ def create_multi_window(window, path, savepath, length):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = anomalous.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
@@ -431,7 +431,7 @@ def run_brownian_analysis(tracks, length, fixed_locerr, locerr, d, nb_epochs, sa
     # Run the Brownian motion analysis
     tracks = tracks[str(length)]
 
-    pd_params = anomalous.Brownian_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
+    pd_params = atrack.Brownian_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d}, nb_epochs=nb_epochs)
     print(savepath)
     pd_params.to_csv(savepath)
@@ -440,7 +440,7 @@ def run_brownian_analysis(tracks, length, fixed_locerr, locerr, d, nb_epochs, sa
 def run_confined_analysis(tracks, length, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
     # Run the confined motion analysis
     tracks = tracks[str(length)]
-    pd_params = anomalous.Confined_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
+    pd_params = atrack.Confined_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d, 'q': q, 'l': l}, nb_epochs=nb_epochs)
     pd_params.to_csv(savepath)
     print("Confined motion analysis completed and results saved to %s."%savepath)
@@ -448,7 +448,7 @@ def run_confined_analysis(tracks, length, fixed_locerr, locerr, d, q, l, nb_epoc
 def run_directed_analysis(tracks, length, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
     # Run the directed motion analysis
     tracks = tracks[str(length)]
-    pd_params = anomalous.Directed_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
+    pd_params = atrack.Directed_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d, 'q': q, 'l': l}, nb_epochs=nb_epochs)
     pd_params.to_csv(savepath)
     print("Directed motion analysis completed and results saved to %s."%savepath)
@@ -456,7 +456,7 @@ def run_directed_analysis(tracks, length, fixed_locerr, locerr, d, q, l, nb_epoc
 def run_multi_analysis(tracks, length, fixed_locerr, min_nb_states, max_nb_states, confined_locerr, confined_d, confined_q, confined_l, directed_locerr, directed_d, directed_q, directed_l, nb_epochs, batch_size, savepath):
     # Run the multiple states analysis
     tracks = tracks[str(length)]
-    likelihoods, all_pd_params = anomalous.multi_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr, min_nb_states=min_nb_states, max_nb_states=max_nb_states, nb_epochs=nb_epochs, batch_size=batch_size, 
+    likelihoods, all_pd_params = atrack.multi_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr, min_nb_states=min_nb_states, max_nb_states=max_nb_states, nb_epochs=nb_epochs, batch_size=batch_size, 
                                     Initial_confined_params={'LocErr': confined_locerr, 'd': confined_d, 'q': confined_q, 'l': confined_l},
                                     Initial_directed_params={'LocErr': directed_locerr, 'd': directed_d, 'q': directed_q, 'l': directed_l}, 
                                     )
