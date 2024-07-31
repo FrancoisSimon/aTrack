@@ -62,7 +62,9 @@ Arguments:
 - `Initial_params` : Dictionary of the initial parameters. The values for each key must be a list of floats of length `nb_states`.
         The default is {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}.
         The parameters represent the localization error, the diffusion length per step, the change per step of the x, y speed of the
-        directed motion and the standard deviation of the initial speed of the particle. 
+        directed motion and the standard deviation of the initial speed of the particle.
+- `motion_blur_coef` : Number in between 0 and 0.25 that represents the effect of motion blur. For a uniform illumination over a time dt' at each 
+        time frame dt, the motion blur coefficient must be set to dt'/(6*dt). See Berglund (2010) for more details.
 
 Outputs:
 - `pd_params`: Log likelihood and model parameters in pandas format
@@ -85,7 +87,9 @@ Arguments:
         The default is {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}.
         The parameters represent the localization error, the diffusion length per step, the change per step of the x, y speed of the
         directed motion and the standard deviation of the initial speed of the particle. 
-
+- `motion_blur_coef` : Number in between 0 and 0.25 that represents the effect of motion blur. For a uniform illumination over a time dt' at each 
+        time frame dt, the motion blur coefficient must be set to dt'/(6*dt). See Berglund (2010) for more details.
+  
 Outputs:
 - `pd_params`: Log likelihood and model parameters in pandas format.
         Log_likelihood: log probability of each track according to the model.
@@ -108,7 +112,9 @@ Arguments:
         The default is {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}.
         The parameters represent the localization error, the diffusion length per step, the change per step of the x, y speed of the
         directed motion and the standard deviation of the initial speed of the particle. 
-
+- `motion_blur_coef` : Number in between 0 and 0.25 that represents the effect of motion blur. For a uniform illumination over a time dt' at each 
+        time frame dt, the motion blur coefficient must be set to dt'/(6*dt). See Berglund (2010) for more details.
+  
 Outputs:
 - `pd_params`: Log likelihood and model parameters in pandas format.
         Log_likelihood: log probability of each track according to the model.
@@ -131,7 +137,9 @@ Arguments:
 - `batch_size`: Number of tracks considered per batch to avoid memory issues when dealing with big data sets.
 - `Initial_confined_params`: Initial guess for the first step of the method. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
 - `Initial_directed_params`: The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
-
+- `motion_blur_coef` : Number in between 0 and 0.25 that represents the effect of motion blur. For a uniform illumination over a time dt' at each 
+        time frame dt, the motion blur coefficient must be set to dt'/(6*dt). See Berglund (2010) for more details.
+  
 Outputs:
 - `likelihoods`: pandas array of the likelihoods of the model for the different nunbers of states.
 - `all_pd_params`: Dictionnary with keys 'nb_states' containing pandas arrays summarizing all the parameters of the model for the number of states specified by the key. The columns are 'state', 'LocErr', 'd', 'q', 'l', 'type', 'fraction'. `state`: integer representing each state of the model with a number of states = 'nb_states'. `LocErr`: localization error, `d`: diffusion length per step which relates to the diffusion coefficient $D$ and time step $\Delta t$ according to $D = \sqrt{2D\Delta t}$. `q`: evolution parameter which corresponds to the diffusion length of the potential well when the state is confined and which corresponds to the change per time step of the velocity when the state is directed (see `type` to know if the state is confined or directed). `l`: force of the anomalous diffusion parameter, in case of confinement it corresponds to the fraction of the distance between the particle and the center of the potential well crossed during 1 time step, in case of directed motion, it corresponds to the velocity of the directed motion (at the first time step of the tracks).  `type`: Either 'Conf' if the state represents confined motion or 'Dir' if the state represents directed motion. `fraction`: Fraction of the particles in this state.
