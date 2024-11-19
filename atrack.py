@@ -116,7 +116,69 @@ def read_table(paths, # path of the file to read or list of paths to read multip
                     
     if zero_disp_tracks and not remove_no_disp:
         print('Warning: some tracks show no displacements. To be checked if normal or not. These tracks can be removed with remove_no_disp = True')
-    return tracks, frames, opt_metrics
+    
+    track_list = []
+    frame_list = []
+    opt_metric_lists = {}
+    for m in opt_metrics:
+        opt_metric_lists[m] = []
+    
+    for l in tracks:
+        track_list += list(tracks[l])
+        frame_list += list(frames[l])
+        for m in opt_metrics:
+            opt_metric_lists[m] += list(opt_metrics[m][l])
+
+    return track_list, frame_list, opt_metric_lists
+
+def padding(track_list, fitting_type = 'All'):
+    '''
+    If tracks have multiple lengths, we need to homogenize the shape to the longest track lengths using padding and mask the state updates of the padding
+    
+    This function takes a list of tracks as imput and returns a padded array of tracks and the corresponding padding mask.
+    
+    fitting_type: can be either 'All', 'Directed', 'Confined' or 'Brownian' depending on the type of motion you want to analyse.
+    'All': works for all types of motion but requires tracks of at least 5 time steps
+    'Directed': works for both directed and Brownian types of motion.
+    'Confined': works for both confined and Brownian types of motion.
+    'Brownian': only works for Brownian motion.
+    If your tracks are all 5 time points or more you can ignore the `fitting_type` argument.
+    '''
+    
+    if fitting_type == 'All':
+        start_len = 3
+        end_len = 2
+    elif fitting_type == 'Directed':
+        start_len = 2
+        end_len = 2
+    elif fitting_type == 'Confined':
+        start_len = 3
+        end_len = 1
+    if fitting_type == 'Brownian':
+        start_len = 1
+        end_len = 1
+    
+    max_len = 0
+    for track in track_list:
+        if track.shape[0] > max_len:
+            max_len = track.shape[0]
+    #    elif track.shape[0] <5:
+    #        raise Warning('The minimal track length supported when using aTrack with multiple track lengths is 3 time points for the Brownian fitting, 4 time points for the directed fitting and 5 for the confined fitting. Please make sure that you only use tracks of at least 5 time points.')
+    nb_tracks = len(track_list)
+    padded_tracks = np.zeros((nb_tracks, max_len, track.shape[1]), dtype = track.dtype)
+    mask = np.zeros((nb_tracks, max_len), dtype = track.dtype)
+
+    for i, track in enumerate(track_list):
+        if track.shape[0]>=start_len+end_len:
+            cur_len = track.shape[0]
+            padded_tracks[i, :cur_len - end_len] = track[:cur_len - end_len]
+            padded_tracks[i, - end_len:] = track[- end_len:]
+            mask[i, :cur_len - end_len] = 1
+            mask[i, - end_len:] = 1
+        else:
+            raise Warning('The minimal track length supported when using aTrack with multiple track lengths is 2 time points for the Brownian fitting, 4 time points for the directed fitting, 4 for the confined fitting and 5 to perform both directed and confined. The tracks that were too short were discarded.')
+    
+    return padded_tracks, mask
 
 class Brownian_Initial_layer(tf.keras.layers.Layer):
     def __init__(
@@ -157,12 +219,17 @@ class Brownian_RNNCell(tf.keras.layers.Layer):
             self.parent.build(input_shape)
         self.built = True
 
-    def call(self, inputs, states): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
+    def call(self, inputs, states, mask = None): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
         prev_output = states
         output = self.Brownian_function(inputs, prev_output)
+        
+        if mask is not None:
+            mask = tf.cast(mask, dtype=output.dtype)  # Ensure mask is the same dtype as output
+            output = mask * output + (1 - mask) * prev_output
+        
         return output[2], output
         #return [output[2], tf.math.exp(0.5*self.parent.weights[0]), tf.math.exp(0.5*self.parent.weights[1])], output # the first output is the output of the layer, the second is the hidden states
-       
+        
     def Brownian_function(self, input_i, prev_output):
         d2 = tf.math.exp(self.parent.weights[0])
         LocErr2 = tf.math.exp(self.parent.weights[1])
@@ -179,7 +246,34 @@ class Brownian_RNNCell(tf.keras.layers.Layer):
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
-def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1}, nb_epochs = 400, output_type = 'dict'):
+'''
+class Brownian_RNN(tf.keras.layers.RNN):
+    def __init__(self, units, parent, **kwargs):
+        cell = Brownian_RNNCell(units, parent, dtype)
+        super(Brownian_RNN, self).__init__(cell, **kwargs)
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
+
+
+class Brownian_RNN(tf.keras.layers.Layer):
+    def __init__(self, state_size, parent, **kwargs):
+        super(Brownian_RNN, self).__init__(**kwargs)
+        # Initialize the Brownian_RNNCell with necessary arguments
+        self.cell = Brownian_RNNCell(state_size=state_size, parent=parent)
+        # Wrap the custom cell with tf.keras.layers.RNN to handle time steps
+        self.rnn_layer = tf.keras.layers.RNN(self.cell, return_sequences=True, return_state=True)
+'''
+        
+class Brownian_RNN(tf.keras.layers.RNN):
+    def __init__(self, cell, **kwargs):
+        #cell = Brownian_RNNCell(state_size, parent)
+        super(Brownian_RNN, self).__init__(cell, **kwargs)
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
+
+def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1}, nb_epochs = 400, output_type = 'dict', fitting_type = 'All'):
     '''
     Fit single tracks to a model with diffusion (+ localizatione error). If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -198,7 +292,9 @@ def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
         Dictionary of the initial parameters. The values for each key must be a list of floats of length `nb_states`.
         The default is {'LocErr': 0.02, 'd': 0.1}.
         The parameters represent the localization error, the diffusion length per step, the change per step of the x, y speed of the
-        directed motion and the standard deviation of the initial speed of the particle. 
+        directed motion and the standard deviation of the initial speed of the particle.
+    output_type: string
+        If output_type == 'dict', the function returns a dictonary of the results as following
     
     Returns
     -------
@@ -210,21 +306,30 @@ def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
         LP: Log probability of each track according to the model.
     '''
     
+    if type(tracks) == list:
+        tracks, mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        mask = np.ones(tracks.shape[:2])
+    
     nb_tracks = len(tracks)
     nb_dims = tracks.shape[2]
     input_size = nb_dims
-        
+    
     inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+    #inputs = tf.constant(tracks, dtype = dtype)
+    
     layer1 = Brownian_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
     tensor1, initial_state = layer1(inputs)
     cell = Brownian_RNNCell([input_size, 1, 1], layer1, dtype = dtype) # n
-    RNN_layer = tf.keras.layers.RNN(cell, dtype = dtype)
-    outputs = RNN_layer(tensor1[:,1:], initial_state = initial_state)
+    #RNN_layer = tf.keras.layers.RNN(cell, dtype = dtype)
+    RNN_layer = Brownian_RNN(cell, dtype = dtype)
+    outputs = RNN_layer(tensor1[:,1:], initial_state = initial_state, mask = input_mask[:,1:])
     
-    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Diffusion_model")
+    model = tf.keras.Model(inputs=[inputs, input_mask],  outputs=outputs, name="Diffusion_model")
     if verbose > 0:
         model.summary()
-        
+            
     def MLE_loss(y_true, y_pred): # y_pred = log likelihood of the tracks shape (None, 1)
         #print(y_pred)
         return - tf.math.reduce_sum(y_pred, axis=-1) # sum over the spatial dimensions axis
@@ -232,13 +337,13 @@ def Brownian_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
     # model.compile(loss=MLE_loss, optimizer='adam')    
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
-    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
+    LP = model.predict_on_batch([tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype), mask])
     est_LocErrs, est_ds = model.layers[1].get_parameters()
     
     if output_type == 'dict':
@@ -270,13 +375,13 @@ class Directed_Initial_layer(tf.keras.layers.Layer):
         self.built = True
     
     def call(self, inputs, nb_dims):
-       
+        
         LocErr2 =  tf.math.exp(self.Log_LocErr2)
         d2 = tf.math.exp(self.Log_d2)
         q2 = tf.math.exp(self.Log_q2)
         l2 = tf.math.exp(self.Log_l2)
         #print(LocErr2**0.5, d2**0.5, q2**0.5, l2**0.5)
-       
+        
         LP = tf.zeros_like(inputs[:,:1,0], dtype = dtype)
         #step 0:
         s2i = LocErr2 + d2
@@ -332,9 +437,14 @@ class Directed_RNNCell(tf.keras.layers.Layer):
             self.parent.build(input_shape)
         self.built = True
 
-    def call(self, inputs, states): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
+    def call(self, inputs, states, mask = None): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
         prev_output = states
         output = self.directed_motion_function(inputs, prev_output, self.nb_dims)
+        
+        if mask is not None:
+            mask = tf.cast(mask, dtype=output.dtype)  # Ensure mask is the same dtype as output
+            output = mask * output + (1 - mask) * prev_output
+        
         return [output[0], output[7]], output # the first oupput is the output of the layer, the second is the hidden states
    
     def directed_motion_function(self, input_i, prev_output, nb_dims):
@@ -387,6 +497,14 @@ class Directed_RNNCell(tf.keras.layers.Layer):
 
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
+
+class Directed_RNN(tf.keras.layers.RNN):
+    def __init__(self, cell, **kwargs):
+        #cell = Brownian_RNNCell(state_size, parent)
+        super(Directed_RNN, self).__init__(cell, **kwargs)
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
 
 class Directed_Final_layer(tf.keras.layers.Layer):
 
@@ -450,7 +568,7 @@ class Directed_Final_layer(tf.keras.layers.Layer):
         return -0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
 #from keras.callbacks import LambdaCallback
-def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict'):
+def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict', fitting_type = 'All'):
     '''
     Fit single tracks to a model with diffusion plus directed motion. If memory issues occur, split your data 
     set into multiple arrays and perform a fitting on each array separately.
@@ -488,16 +606,23 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
             Predicted average speed of the particle along the whole track (as opposed to l which represents the speed at the first time point)
     '''
     
+    if type(tracks) == list:
+        tracks, mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        mask = np.ones(tracks.shape[:2])
+    
     nb_tracks, track_len, nb_dims = tracks.shape
     input_size = nb_dims
     
     if track_len > 4:
         inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+        input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+        
         layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
         tensor1, initial_state = layer1(inputs, input_size)
         cell = Directed_RNNCell([1, 1, input_size, 1, 1, input_size, 1, input_size], layer1, input_size, dtype = dtype) # n
-        RNN_layer = tf.keras.layers.RNN(cell, return_state = True, return_sequences=True, dtype = dtype)
-        tensor2 = RNN_layer(tensor1[:,2:-2], initial_state = initial_state)
+        RNN_layer = Directed_RNN(cell, return_state = True, return_sequences=True, dtype = dtype)
+        tensor2 = RNN_layer(tensor1[:,2:-2], initial_state = initial_state, mask = input_mask[:,2:-2])
         kis = tensor2[1]
         prev_outputs = tensor2[2:]
         layer3 = Directed_Final_layer(layer1, input_size, dtype = dtype)
@@ -505,15 +630,17 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
         LP = layer3(inputs[:,:], prev_outputs)
     elif track_len <= 4:
         inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
-        layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = {'LocErr': 0.02, 'd': 0.01, 'q': 0.01, 'l': 0.1}, dtype = dtype)
+        input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+
+        layer1 = Directed_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
         tensor1, initial_state = layer1(inputs, input_size)
         prev_outputs = initial_state
         layer3 = Directed_Final_layer(layer1, input_size, dtype = dtype)
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
         LP = layer3(inputs[:,:], prev_outputs)
-        kis = LP
+        kis = LP*0
     
-    model = tf.keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
+    model = tf.keras.Model(inputs=[inputs, input_mask], outputs=LP, name="Diffusion_model")
     if verbose > 0:
         model.summary()
     
@@ -522,28 +649,30 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
-
-    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
+    history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    
+    LP = model.predict_on_batch([tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype), mask])
     est_LocErrs, est_ds, est_qs, est_ls = layer1.get_parameters()
-    
-    kis_model = tf.keras.Model(inputs=inputs, outputs=kis, name="Diffusion_model")
-    pred_kis = kis_model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
-    mean_pred_kis = np.mean(np.sum(pred_kis**2, axis=2)**0.5, axis=1, keepdims = True)
-    
+    if track_len > 4:
+        kis_model = tf.keras.Model(inputs=[inputs, input_mask], outputs=kis, name="Diffusion_model")
+        pred_kis = kis_model.predict_on_batch([tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype), mask])
+        mean_pred_kis = np.mean(np.sum(pred_kis**2, axis=2)**0.5, axis=1, keepdims = True)
+    elif track_len <= 4:
+        mean_pred_kis = est_LocErrs*np.nan
+
     if output_type == 'dict':
         pd_params = pd.DataFrame(np.concatenate((LP, est_LocErrs, est_ds, est_qs, est_ls, mean_pred_kis), axis = 1), columns = ['Log_likelihood', 'LocErr', 'd', 'q', 'l', 'mean_speed'])
         return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
     else:
         return est_LocErrs, est_ds, est_qs, est_ls, LP, mean_pred_kis
 
+
 '''
 Confined diffusion
-
 '''
 
 class Confinement_Initial_layer(tf.keras.layers.Layer):
@@ -636,6 +765,7 @@ class Confinement_Initial_layer(tf.keras.layers.Layer):
         d2 = np.exp(self.Log_d2)
         return np.exp(self.Log_LocErr2)**0.5, d2**0.5, np.array((self.sigmoid(self.invsig_q2)*d2)**0.5), np.array(self.sigmoid(self.invsig_l))
 
+
 class Confinement_RNNCell(tf.keras.layers.Layer):
    
     def __init__(self, state_size, parent, nb_dims, **kwargs):
@@ -650,9 +780,14 @@ class Confinement_RNNCell(tf.keras.layers.Layer):
             self.parent.build(input_shape)
         self.built = True
 
-    def call(self, inputs, states): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
+    def call(self, inputs, states, mask =None): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
         prev_output = states
         output = self.Brownian_function(inputs, prev_output, self.nb_dims)
+        
+        if mask is not None:
+            mask = tf.cast(mask, dtype=output.dtype)  # Ensure mask is the same dtype as output
+            output = mask * output + (1 - mask) * prev_output
+        
         return output[0], output # the first oupput is the output of the layer, the second is the hidden states
        
     def Brownian_function(self, input_i, prev_output, nb_dims):
@@ -704,6 +839,14 @@ class Confinement_RNNCell(tf.keras.layers.Layer):
     def sigmoid(self, x):
         return 1/(1+tf.math.exp(-x))
 
+class Confinement_RNN(tf.keras.layers.RNN):
+    def __init__(self, cell, **kwargs):
+        #cell = Brownian_RNNCell(state_size, parent)
+        super(Confinement_RNN, self).__init__(cell, **kwargs)
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
+
 class Confinement_Final_layer(tf.keras.layers.Layer):
 
     def __init__(self, parent, nb_dims, **kwargs):
@@ -754,7 +897,7 @@ class Confinement_Final_layer(tf.keras.layers.Layer):
     def sigmoid(self, x):
         return 1/(1+tf.math.exp(-x))
 
-def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict'):
+def Confined_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}, nb_epochs = 400, output_type = 'dict', fitting_type = 'All'):
     '''
     Fit single tracks to a model with brownian diffusion and confinement. If a memory shortage occurs reduce the number of tracks analyzed at once.
     
@@ -790,21 +933,28 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
             Estiamted confinement factor of each particle.
     '''
     
+    if type(tracks) == list:
+        tracks, mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        mask = np.ones(tracks.shape[:2])
+    
     nb_tracks = len(tracks)
     nb_dims = tracks.shape[2]
     input_size = nb_dims
     
     inputs = tf.keras.Input(shape=(None, input_size), batch_size = nb_tracks, dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+    
     layer1 = Confinement_Initial_layer(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
     tensor1, initial_state = layer1(inputs, input_size)
     cell = Confinement_RNNCell([1, input_size, 1, 1, 1, input_size, input_size], layer1, input_size, dtype = dtype) # n
     RNN_layer = tf.keras.layers.RNN(cell, return_state = True, dtype = dtype)
-    tensor2 = RNN_layer(tensor1[:,3:-1], initial_state = initial_state)
+    tensor2 = RNN_layer(tensor1[:,3:-1], initial_state = initial_state, mask = input_mask[:,3:-1])
     prev_outputs = tensor2[1:]
     layer3 = Confinement_Final_layer(layer1, input_size, dtype = dtype)
     LP = layer3(inputs[:,-1], prev_outputs)
     
-    model = tf.keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
+    model = tf.keras.Model(inputs=[inputs, input_mask], outputs=LP, name="Diffusion_model")
     if verbose > 0:
         model.summary()
         
@@ -814,13 +964,13 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
     # model.compile(loss=MLE_loss, optimizer='adam')
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks[:nb_tracks,:,:input_size], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
 
-    LP = model.predict_on_batch(tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype))
+    LP = model.predict_on_batch([tf.constant(tracks[:nb_tracks,:,:input_size], dtype = dtype), mask])
     est_LocErrs, est_ds, est_qs, est_ls = model.layers[1].get_parameters()
     
     if output_type == 'dict':
@@ -828,7 +978,6 @@ def Confined_fit(tracks, verbose = 0, Fixed_LocErr = True, Initial_params = {'Lo
         return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
     else:
         return est_LocErrs, est_ds, est_qs, est_ls, LP
-
 
 class Brownian_Initial_layer_multi(tf.keras.layers.Layer):
     def __init__(
@@ -851,8 +1000,10 @@ class Brownian_Initial_layer_multi(tf.keras.layers.Layer):
     def call(self, inputs):
         init_mu = tf.repeat(inputs[:,0], self.nb_states, axis = 1) # initial most likely real postion
         init_s2 = tf.math.exp(self.LogLocErr2) + tf.math.exp(self.Logd2) # initial variance
+        #init_s2 = tf.repeat(init_s2, inputs.shape[0], axis = 0)
         #init_LP = tf.zeros((inputs.shape[0], nb_states))
         init_LP = tf.repeat(tf.zeros_like(inputs[:,:1,0, 0], dtype = dtype), self.nb_states, axis = 1)
+        init_s2 = init_s2 + init_LP[:,:,None]
         initial_state = [init_mu, init_s2, init_LP]
         return inputs, initial_state
 
@@ -873,11 +1024,16 @@ class Brownian_RNNCell_multi(tf.keras.layers.Layer):
             self.parent.build(input_shape)
         self.built = True
 
-    def call(self, inputs, states): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
+    def call(self, inputs, states, mask = None): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
         prev_output = states
         output = self.Brownian_function(inputs, prev_output)
+        
+        if mask is not None:
+            mask = tf.cast(mask, dtype=output.dtype)  # Ensure mask is the same dtype as output
+            output = mask * output + (1 - mask) * prev_output
+        
         return output[2], output # the first oupput is the output of the layer, the second is the hidden states
-       
+    
     def Brownian_function(self, input_i, prev_output):
         d2 = tf.math.exp(self.parent.weights[0])
         LocErr2 = tf.math.exp(self.parent.weights[1])
@@ -899,7 +1055,15 @@ class Brownian_RNNCell_multi(tf.keras.layers.Layer):
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
-def Brownian_fit_multi(tracks, nb_states = 3, verbose = 1, Fixed_LocErr = False, nb_epochs = 400, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.023], 'd': [0.05, 0.08, 0.1]}):
+class multi_Brownian_RNN(tf.keras.layers.RNN):
+    def __init__(self, cell, **kwargs):
+        #cell = Brownian_RNNCell(state_size, parent)
+        super(multi_Brownian_RNN, self).__init__(cell, **kwargs)
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
+
+def Brownian_fit_multi(tracks, nb_states = 3, verbose = 1, Fixed_LocErr = False, nb_epochs = 400, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.023], 'd': [0.05, 0.08, 0.1]}, fitting_type = 'All'):
     '''
     Fit a population of tracks to a model with brownian diffusion (and localization error) with a number of states specified by `nb_states`.
     
@@ -934,8 +1098,12 @@ def Brownian_fit_multi(tracks, nb_states = 3, verbose = 1, Fixed_LocErr = False,
         estiamted standard deviation of the initial speed of the particle
     sum_LP: log probability of the data set.
     '''
+    if type(tracks) == list:
+        tracks, mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        mask = np.ones(tracks.shape[:2])
     
-    if  len(Initial_params['d']) != nb_states or len(Initial_params['LocErr']) != nb_states :
+    if len(Initial_params['d']) != nb_states or len(Initial_params['LocErr']) != nb_states :
         print("the length of the initial parameter list `Initial_params` is not matching the number of states nb_states, instead, this code will use randomly distibuted initial parameters")
         for param in Initial_params:
             Initial_params[param] = np.random.rand(nb_states)*3*Initial_params[param][0]
@@ -944,17 +1112,19 @@ def Brownian_fit_multi(tracks, nb_states = 3, verbose = 1, Fixed_LocErr = False,
     nb_tracks = tracks.shape[0]
     
     tf_tracks = tf.constant(tracks[:nb_tracks,:,None, :nb_dims], dtype = dtype)
-
+    
     inputs = tf.keras.Input(shape=(None, 1, nb_dims), dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+    
     layer1 = Brownian_Initial_layer_multi(nb_states = nb_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
     tensor1, initial_state = layer1(inputs)
     
     #cell = Brownian_RNNCell_multi([(nb_states, nb_dims), (nb_states, 1), (nb_states, 1)], layer1) # n
     cell = Brownian_RNNCell_multi([tf.TensorShape([nb_states, nb_dims]), tf.TensorShape([nb_states, 1]), tf.TensorShape([nb_states])], layer1, dtype = dtype) # n
-    RNN_layer = tf.keras.layers.RNN(cell, dtype = dtype)
-    outputs = RNN_layer(tensor1[:,1:], initial_state = initial_state)
+    RNN_layer = multi_Brownian_RNN(cell, dtype = dtype)
+    outputs = RNN_layer(tensor1[:,1:], initial_state = initial_state, mask = input_mask[:,1:])
     
-    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Diffusion_model")
+    model = tf.keras.Model(inputs=[inputs, input_mask], outputs=outputs, name="Diffusion_model")
     if verbose > 0:
         model.summary()
     
@@ -968,24 +1138,24 @@ def Brownian_fit_multi(tracks, nb_states = 3, verbose = 1, Fixed_LocErr = False,
     # model.compile(loss=MLE_loss, optimizer='adam')
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = 20, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = 20, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = 30, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = 30, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.01, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
-    LPs = model.predict_on_batch(tf_tracks)
+    LPs = model.predict_on_batch([tf_tracks, mask])
     
     sum_LP = MLE_loss(LPs, LPs)
     
@@ -1009,7 +1179,6 @@ class Directed_Initial_layer_multi(tf.keras.layers.Layer):
        
         def inverse_sigmoid(x):
             return tf.math.log(x/(1-x))
-        
         
         self.Log_d2 = tf.Variable(2*np.log([self.Initial_params['d']])[:,:,None], dtype = dtype, name = 'Log_d2', constraint=lambda x: tf.clip_by_value(x, clipping_value, np.inf))
         self.Log_q2 = tf.Variable(2*np.log([self.Initial_params['q']])[:,:,None], dtype = dtype, name = 'Log_q2', constraint=lambda x: tf.clip_by_value(x, clipping_value, np.inf))
@@ -1063,7 +1232,13 @@ class Directed_Initial_layer_multi(tf.keras.layers.Layer):
         kim1 = ki / betai
         q2i = (h2i + t2i) / betai**2
         LP += - nb_dims * tf.math.log(betai[:,:,0])
-       
+        
+        shape_tensor = tf.zeros_like(inputs[:,0,:, 0,None], dtype = dtype)
+        x2i = x2i + shape_tensor
+        q2i = q2i + shape_tensor
+        g2i = g2i + shape_tensor
+        alphai = alphai + shape_tensor
+
         initial_state = [LP, alphai, gammai, g2i, q2i, kim1, x2i]
        
         return inputs, initial_state
@@ -1085,9 +1260,14 @@ class Directed_RNNCell_multi(tf.keras.layers.Layer):
             self.parent.build(input_shape)
         self.built = True
 
-    def call(self, inputs, states): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
+    def call(self, inputs, states, mask = None): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
         prev_output = states
         output = self.directed_motion_function(inputs, prev_output, self.nb_dims)
+        
+        if mask is not None:
+            mask = tf.cast(mask, dtype=output.dtype)  # Ensure mask is the same dtype as output
+            output = mask * output + (1 - mask) * prev_output
+        
         return output[0], output # the first oupput is the output of the layer, the second is the hidden states
     
     def directed_motion_function(self, input_i, prev_output, nb_dims):
@@ -1136,6 +1316,14 @@ class Directed_RNNCell_multi(tf.keras.layers.Layer):
 
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
+
+class multi_Directed_RNN(tf.keras.layers.RNN):
+    def __init__(self, cell, **kwargs):
+        #cell = Brownian_RNNCell(state_size, parent)
+        super(multi_Directed_RNN, self).__init__(cell, **kwargs)
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
 
 class Directed_Final_layer_multi(tf.keras.layers.Layer):
 
@@ -1197,7 +1385,7 @@ class Directed_Final_layer_multi(tf.keras.layers.Layer):
     def log_gaussian(self, top, variance):
         return - 0.5*tf.math.log(tf.constant(2*np.pi, dtype = dtype)*variance) - (top)**2/(2*variance)
 
-def Directed_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, nb_epochs = 300, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}):
+def Directed_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, nb_epochs = 300, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}, fitting_type = 'All'):
     '''
     Fit a population of tracks to a model with diffusion plus directed motion with a number of states specified by `nb_states`.
     
@@ -1233,6 +1421,11 @@ def Directed_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, 
         estiamted standard deviation of the initial speed of the particle
     sum_LP: log probability of the data set.
     '''
+    if type(tracks) == list:
+        tracks, mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        mask = np.ones(tracks.shape[:2])
+    
     if len(Initial_params['d']) != nb_states or len(Initial_params['LocErr']) != nb_states or len(Initial_params['q']) != nb_states or len(Initial_params['l']) != nb_states:
         print("the length of the initial parameter list `Initial_params` is not matching the number of states nb_states, instead, this code will use randomly distibuted initial parameters")
         for param in Initial_params:
@@ -1247,24 +1440,28 @@ def Directed_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, 
     nb_tracks = len(tracks)
     if track_len > 4:
         inputs = tf.keras.Input(shape=(None, 1, nb_dims), dtype = dtype)
+        input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+    
         layer1 = Directed_Initial_layer_multi(nb_states = 3, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
         tensor1, initial_state = layer1(inputs, nb_dims)
         cell = Directed_RNNCell_multi([tf.TensorShape([nb_states]), tf.TensorShape([nb_states, 1]), tf.TensorShape([nb_states, nb_dims]), tf.TensorShape([nb_states, 1]), tf.TensorShape([nb_states, 1]), tf.TensorShape([nb_states, nb_dims]), tf.TensorShape([nb_states, 1])], layer1, nb_dims, dtype = dtype) # n
-        RNN_layer = tf.keras.layers.RNN(cell, return_state = True, dtype = dtype)
-        tensor2 = RNN_layer(tensor1[:,2:-2], initial_state = initial_state)
+        RNN_layer = multi_Directed_RNN(cell, return_state = True, dtype = dtype)
+        tensor2 = RNN_layer(tensor1[:,2:-2], initial_state = initial_state, mask = input_mask[:,2:-2])
         prev_outputs = tensor2[1:]
         layer3 = Directed_Final_layer_multi(layer1, nb_dims, dtype = dtype)
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
         LP = layer3(inputs[:,:], prev_outputs)
     elif track_len <= 4:
         inputs = tf.keras.Input(shape=(None, 1, nb_dims), dtype = dtype)
+        input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+
         layer1 = Directed_Initial_layer_multi(Fixed_LocErr = Fixed_LocErr, Initial_params = {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}, dtype = dtype)
         tensor1, initial_state = layer1(inputs, nb_dims)
         prev_outputs = initial_state
         layer3 = Directed_Final_layer_multi(layer1, nb_dims, dtype = dtype)
         LP = layer3(inputs[:,:], prev_outputs)
     
-    model = tf.keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
+    model = tf.keras.Model(inputs=[inputs, input_mask], outputs=LP, name="Diffusion_model")
     
     if verbose > 0:
         model.summary()
@@ -1280,27 +1477,27 @@ def Directed_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, 
     # model.compile(loss=MLE_loss, optimizer='adam')
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = 20, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = 20, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = 30, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = 30, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
 
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
 
     adam = tf.keras.optimizers.Adam(learning_rate=0.01, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
 
     #plt.figure()
     #plt.plot(history.history['loss'])
-    LPs = model.predict_on_batch(tf_tracks)
+    LPs = model.predict_on_batch([tf_tracks, mask])
     sum_LP = MLE_loss(LPs, LPs)
     
     est_LocErrs, est_ds, est_qs, est_ls = layer1.get_parameters()
@@ -1320,7 +1517,7 @@ class Confinement_Initial_layer_multi(tf.keras.layers.Layer):
         super().__init__(**kwargs)
        
     def build(self, input_shape):
-       
+        
         def inverse_sigmoid(x):
             return np.log(x/(1-x))
        
@@ -1392,7 +1589,12 @@ class Confinement_Initial_layer_multi(tf.keras.layers.Layer):
         LP += - nb_dims * tf.math.log(zeta[:,:,0])
 
         prev_inputs = inputs[:,2]
-       
+        
+        shape_tensor = tf.zeros_like(inputs[:,0,:, 0,None], dtype = dtype)
+        x2 = x2 + shape_tensor
+        w2 = w2 + shape_tensor
+        alpha = alpha + shape_tensor
+        
         initial_state = [LP, prev_inputs, x2, w2, alpha, u, gamma]
        
         return inputs, initial_state
@@ -1424,9 +1626,14 @@ class Confinement_RNNCell_multi(tf.keras.layers.Layer):
             self.parent.build(input_shape)
         self.built = True
     
-    def call(self, input_i, states): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
+    def call(self, input_i, states, mask = None): # inputs = current positions, states = outputs of the previous layer, needs to be initialized correctly
         prev_output = states
         output = self.Brownian_function(input_i, prev_output, self.nb_dims)
+        
+        if mask is not None:
+            mask = tf.cast(mask, dtype=output.dtype)  # Ensure mask is the same dtype as output
+            output = mask * output + (1 - mask) * prev_output
+        
         return output[0], output # the first oupput is the output of the layer, the second is the hidden states
        
     def Brownian_function(self, input_i, prev_output, nb_dims):
@@ -1466,7 +1673,7 @@ class Confinement_RNNCell_multi(tf.keras.layers.Layer):
         LP += - nb_dims * tf.math.log(zeta)[:,:,0]
        
         prev_inputs = input_i
-       
+        
         output = [LP, prev_inputs, x2, w2, alpha, u, gamma]
         #print(prev_output)
        
@@ -1477,6 +1684,14 @@ class Confinement_RNNCell_multi(tf.keras.layers.Layer):
 
     def sigmoid(self, x):
         return 1/(1+tf.math.exp(-x))
+
+class multi_Confinement_RNN(tf.keras.layers.RNN):
+    def __init__(self, cell, **kwargs):
+        #cell = Brownian_RNNCell(state_size, parent)
+        super(multi_Confinement_RNN, self).__init__(cell, **kwargs)
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
 
 class Confinement_Final_layer_multi(tf.keras.layers.Layer):
 
@@ -1527,7 +1742,7 @@ class Confinement_Final_layer_multi(tf.keras.layers.Layer):
     def sigmoid(self, x):
         return 1/(1+tf.math.exp(-x))
 
-def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, nb_epochs = 500, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}):
+def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, nb_epochs = 500, batch_size = 5000, Initial_params = {'LocErr': [0.02, 0.022, 0.022], 'd': [0.1, 0.12, 0.12], 'q': [0.01, 0.012, 0.012], 'l': [0.01, 0.02, 0.012]}, fitting_type = 'All'):
     '''
     Fit a population of tracks to a model with a number of states specified by `nb_states`.
     
@@ -1564,6 +1779,10 @@ def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, 
         estiamted confinement factor for each state
     sum_LP: log probability of the data set.
     '''
+    if type(tracks) == list:
+        tracks, mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        mask = np.ones(tracks.shape[:2])
     
     if len(Initial_params['d']) != nb_states or len(Initial_params['LocErr']) != nb_states or len(Initial_params['q']) != nb_states or len(Initial_params['l']) != nb_states:
         print("the length of the initial parameter list `Initial_params` is not matching the number of states nb_states, instead, this code will use randomly distibuted initial parameters")
@@ -1573,19 +1792,20 @@ def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, 
     nb_tracks, track_len, nb_dims = tracks.shape
     
     tf_tracks = tf.constant(tracks[:nb_tracks,:,None, :nb_dims], dtype = dtype)
-    inputs = tf_tracks
     
     inputs = tf.keras.Input(shape=(None, 1, nb_dims), dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+
     layer1 = Confinement_Initial_layer_multi(nb_states = nb_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params, dtype = dtype)
     tensor1, initial_state = layer1(inputs, nb_dims)
     cell = Confinement_RNNCell_multi([tf.TensorShape([nb_states]), tf.TensorShape([1, nb_dims]), tf.TensorShape([nb_states, 1]), tf.TensorShape([nb_states, 1]), tf.TensorShape([nb_states, 1]), tf.TensorShape([nb_states, nb_dims]), tf.TensorShape([nb_states, nb_dims])], layer1, nb_dims, dtype = dtype) # n
-    RNN_layer = tf.keras.layers.RNN(cell, return_state = True, dtype = dtype)
-    tensor2 = RNN_layer(tensor1[:,3:-1], initial_state = initial_state)
+    RNN_layer = multi_Confinement_RNN(cell, return_state = True, dtype = dtype)
+    tensor2 = RNN_layer(tensor1[:,3:-1], initial_state = initial_state, mask = input_mask[:,3:-1])
     prev_outputs = tensor2[1:]
     layer3 = Confinement_Final_layer_multi(layer1, nb_dims, dtype = dtype)
     LP = layer3(inputs[:,-1], prev_outputs)
     
-    model = tf.keras.Model(inputs=inputs, outputs=LP, name="Diffusion_model")
+    model = tf.keras.Model(inputs=[inputs, input_mask], outputs=LP, name="Diffusion_model")
     if verbose > 0:
         model.summary()
     
@@ -1600,35 +1820,37 @@ def Confined_fit_multi(tracks, nb_states = 3, verbose = 0, Fixed_LocErr = True, 
     # model.compile(loss=MLE_loss, optimizer='adam')
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = 20, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = 20, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = 30, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = 30, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
 
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     #plt.plot(history.history['loss'])
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.01, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tf_tracks, tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
+    history = model.fit([tf_tracks, mask], tf_tracks, epochs = nb_epochs, batch_size = batch_size, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
     
-    LPs = model.predict_on_batch(tf_tracks)
+    LPs = model.predict_on_batch([tf_tracks, mask])
     sum_LP = MLE_loss(LPs, LPs)
     est_LocErrs, est_ds, est_qs, est_ls = model.layers[1].get_parameters()
     
     return est_LocErrs, est_ds, est_qs, est_ls, sum_LP
 
+'''
 def confined_LP(inputs, nb_dims = 2, Fixed_LocErr = True, Initial_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}):
+    inputs, input_mask = inputs
     layer1 = Confinement_Initial_layer_multi(Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_params)
     tensor1, initial_state = layer1(inputs, nb_dims)
     cell = Confinement_RNNCell_multi([1, nb_dims, 1, 1, 1, nb_dims, nb_dims], layer1, nb_dims) # n
     RNN_layer = tf.keras.layers.RNN(cell, return_state = True)
-    tensor2 = RNN_layer(tensor1[:,3:-1], initial_state = initial_state)
+    tensor2 = RNN_layer(tensor1[:,3:-1], initial_state = initial_state, mask = input_mask[:,3:-1])
     prev_outputs = tensor2[1:]
     layer3 = Confinement_Final_layer_multi(layer1, nb_dims)
     LP = layer3(inputs[:,-1], prev_outputs)
@@ -1661,10 +1883,12 @@ def Brownian_LP(inputs, nb_dims = 2, Fixed_LocErr = True, Initial_params = {'Loc
     RNN_layer = tf.keras.layers.RNN(cell)
     LP = RNN_layer(tensor1[:,1:], initial_state = initial_state)
     return LP
+'''
 
-def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_nb_states = 15, nb_epochs = 1000, batch_size = 2**11,
+def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_nb_states = 10, nb_epochs = 1000, batch_size = 2**11,
                Initial_confined_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                Initial_directed_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
+               fitting_type = 'All'
                ):
     '''
     Fit models with multiple states and vary the number of states to determine which number of states is best suited to the 
@@ -1703,16 +1927,12 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     
     all_pd_params = {}
     
-    tracks = np.array(tracks)
-    
-    nb_tracks, track_len, nb_dims = tracks.shape
-
     est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = nb_epochs, output_type = 'arrays')
     est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = nb_epochs, output_type = 'arrays')
     
     mask = LP < LP2
     #mask = mask
-
+    
     est_LocErrs[mask] = est_LocErrs2[mask]
     est_ds[mask] = est_ds2[mask]
     est_qs[mask] = est_qs2[mask]
@@ -1758,8 +1978,18 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     
     #max_nb_states = np.max([nb_conf_states, nb_dir_states])
     
+    if type(tracks) == list:
+        tracks, padding_mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        padding_mask = np.ones(tracks.shape[:2])
+    
+    nb_tracks, track_len, nb_dims = tracks.shape
+
     tracks_tf = tf.repeat(tf.constant(tracks[:,:,None, :nb_dims], dtype = dtype), nb_conf_states + nb_dir_states, 2)
+    
     inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
+    inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
     
     outputs = []
     
@@ -1776,11 +2006,23 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         Conf_layer1 = Confinement_Initial_layer_multi(nb_states = nb_conf_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_conf_params, dtype = dtype)
         Conf_tensor1, Conf_initial_state = Conf_layer1(Conf_inputs, nb_dims)
         Conf_cell = Confinement_RNNCell_multi([tf.TensorShape([nb_conf_states]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, nb_dims])], Conf_layer1, nb_dims, dtype = dtype) # n
+        Conf_RNN_layer = multi_Confinement_RNN(Conf_cell, return_state = True, dtype = dtype)
+        Conf_tensor2 = Conf_RNN_layer(Conf_tensor1[:,3:-1], initial_state = Conf_initial_state, mask = input_mask[:,3:-1])
+        Conf_prev_outputs = Conf_tensor2[1:]
+        Conf_layer3 = Confinement_Final_layer_multi(Conf_layer1, nb_dims, dtype = dtype)
+        Conf_LP = Conf_layer3(Conf_inputs[:,-1], Conf_prev_outputs)
+        
+        '''
+        Conf_inputs = inputs[:,:,:nb_conf_states]
+        Conf_layer1 = Confinement_Initial_layer_multi(nb_states = nb_conf_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_conf_params, dtype = dtype)
+        Conf_tensor1, Conf_initial_state = Conf_layer1(Conf_inputs, nb_dims)
+        Conf_cell = Confinement_RNNCell_multi([tf.TensorShape([nb_conf_states]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, nb_dims])], Conf_layer1, nb_dims, dtype = dtype) # n
         Conf_RNN_layer = RNN(Conf_cell, return_state = True, dtype = dtype)
         Conf_tensor2 = Conf_RNN_layer(Conf_tensor1[:,3:-1], initial_state = Conf_initial_state)
         Conf_prev_outputs = Conf_tensor2[1:]
         Conf_layer3 = Confinement_Final_layer_multi(Conf_layer1, nb_dims, dtype = dtype)
         Conf_LP = Conf_layer3(Conf_inputs[:,-1], Conf_prev_outputs)
+        '''
         outputs.append(Conf_LP)
     
     if nb_dir_states > 0:
@@ -1793,7 +2035,20 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
             Initial_dir_params[param] = Dir_params[:, i]
         
         Dir_inputs = inputs[:,:, nb_conf_states:]
-        Dir_layer1 = Directed_Initial_layer_multi(nb_states = 3, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_dir_params, dtype = dtype)
+
+        Dir_layer1 = Directed_Initial_layer_multi(nb_states = nb_dir_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_dir_params, dtype = dtype)
+        Dir_tensor1, Dir_initial_state = Dir_layer1(Dir_inputs, nb_dims)
+        Dir_cell = Directed_RNNCell_multi([tf.TensorShape([nb_dir_states]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1])], Dir_layer1, nb_dims, dtype = dtype) # n
+        Dir_RNN_layer = multi_Directed_RNN(Dir_cell, return_state = True, dtype = dtype)
+        Dir_tensor2 = Dir_RNN_layer(Dir_tensor1[:,2:-2], initial_state = Dir_initial_state, mask = input_mask[:,2:-2])
+        Dir_prev_outputs = Dir_tensor2[1:]
+        Dir_layer3 = Directed_Final_layer_multi(Dir_layer1, nb_dims, dtype = dtype)
+        #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
+        Dir_LP = Dir_layer3(Dir_inputs[:,:], Dir_prev_outputs)
+        
+        '''
+        Dir_inputs = inputs[:,:, nb_conf_states:]
+        Dir_layer1 = Directed_Initial_layer_multi(nb_states = nb_dir_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_dir_params, dtype = dtype)
         Dir_tensor1, Dir_initial_state = Dir_layer1(Dir_inputs, nb_dims)
         Dir_cell = Directed_RNNCell_multi([tf.TensorShape([nb_dir_states]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1])], Dir_layer1, nb_dims, dtype = dtype) # n
         Dir_RNN_layer = tf.keras.layers.RNN(Dir_cell, return_state = True, dtype = dtype)
@@ -1801,7 +2056,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         Dir_prev_outputs = Dir_tensor2[1:]
         Dir_layer3 = Directed_Final_layer_multi(Dir_layer1, nb_dims, dtype = dtype)
         #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
-        Dir_LP = Dir_layer3(Dir_inputs, Dir_prev_outputs)
+        Dir_LP = Dir_layer3(Dir_inputs, Dir_prev_outputs)'''
         outputs.append(Dir_LP)
     
     state_list = np.array(['Conf']*nb_conf_states + ['Dir']*nb_dir_states)
@@ -1826,7 +2081,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     F_layer = Fractions_Layer(nb_conf_states + nb_dir_states, dtype = dtype)
     F_outputs = F_layer(outputs)
     
-    model = tf.keras.Model(inputs=inputs, outputs=F_outputs, name="Diffusion_model")
+    model = tf.keras.Model(inputs=[inputs, input_mask], outputs=F_outputs, name="Diffusion_model")
     
     if verbose > 0:
         model.summary()
@@ -1853,15 +2108,15 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.5, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks_tf, tracks_tf, epochs = 50, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = 50, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks_tf, tracks_tf, epochs = 50, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = 50, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.01, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit(tracks_tf, tracks_tf, epochs = nb_epochs, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
     
     #history_number = 80 # 32 bit
     history_number = 5 # 64 bit
@@ -1879,7 +2134,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     #LPs = model.predict_on_batch(tracks_tf)
     #tf.math.reduce_mean(tf.cast(- MLE_loss(LPs, LPs), dtype = 'float64')).numpy()
     
-    LPs = model.predict_on_batch(tracks_tf)
+    LPs = model.predict_on_batch([tracks_tf, padding_mask])
     #sum_LPs = - MLE_loss(LPs, LPs)
     
     #sum_LP = tf.math.reduce_sum(tf.cast(sum_LPs, dtype = 'float64')).numpy()
@@ -1919,7 +2174,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     while nb_states > min_nb_states:
         print('current number of states: ', nb_states)
         last_nb_states = nb_states
-        LPs = model.predict_on_batch(tracks_tf)
+        LPs = model.predict_on_batch([tracks_tf, padding_mask])
         
         All_alternative_LPs = []
         Fractions = tf.math.softmax(F_layer.weights).numpy()[0]
@@ -1953,11 +2208,11 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         F_layer = Fractions_Layer(nb_states-1, dtype = dtype)
         alternative_outputs_F = F_layer(alternative_outputs)
         
-        alternative_model = tf.keras.Model(inputs=inputs, outputs=alternative_outputs_F, name="Diffusion_model")
+        alternative_model = tf.keras.Model(inputs=[inputs, input_mask], outputs=alternative_outputs_F, name="Diffusion_model")
         
         adam = tf.keras.optimizers.Adam(learning_rate=0.01, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
         alternative_model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-        history = alternative_model.fit(tracks_tf, tracks_tf, epochs = nb_epochs, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) #, callbacks=[model_checkpoint_callback])
+        history = alternative_model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) #, callbacks=[model_checkpoint_callback])
         #alternative_model.load_weights('D:/anomalous/5_states/best_weights.h5')
         
         #LPs = alternative_model.predict_on_batch(tracks_tf)
@@ -2004,12 +2259,5 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     likelihoods['number_of_states'] = likelihoods['number_of_states'].astype(int)
     
     return likelihoods, all_pd_params
-
-
-
-
-
-
-
 
 
