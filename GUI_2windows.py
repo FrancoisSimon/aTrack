@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Nov 19 13:59:38 2024
+
+@author: franc
+"""
+
 import os
 import tkinter as tk
 from tkinter import filedialog
@@ -6,7 +13,7 @@ print('tkinter',tk)
 
 from tkinter import ttk
 import webbrowser
-import atrack
+import atrack_peakwise as atrack
 
 #ttk = tk.ttk
 
@@ -20,7 +27,8 @@ def open_analysis_window():
     print(os.path.normpath(path))
     savepath = os.path.normpath(path).rsplit(os.sep, 1)[0]
     (os.sep, 1)[0]
-    length = int(length_entry.get())
+    min_length = int(min_length_entry.get())
+    max_length = int(max_length_entry.get())
     analysis_type = analysis_type_var.get()
 
     root.withdraw()
@@ -28,16 +36,15 @@ def open_analysis_window():
 
     analysis_window = tk.Tk()
     analysis_window.title("Anomalous Analysis - {}".format(analysis_type))
-
-
+    
     if analysis_type == 'Fitting single tracks in Brownian motion':
-        create_brownian_window(analysis_window, path, savepath, length)
+        create_brownian_window(analysis_window, path, savepath, min_length, max_length)
     elif analysis_type == 'Fitting single tracks in confined motion':
-        create_confined_window(analysis_window, path, savepath, length)
+        create_confined_window(analysis_window, path, savepath, min_length, max_length)
     elif analysis_type == 'Fitting single tracks in directed motion':
-        create_directed_window(analysis_window, path, savepath, length)
-    elif analysis_type == 'Fitting a population of tracks with multiple states':
-        create_multi_window(analysis_window, path, savepath, length)
+        create_directed_window(analysis_window, path, savepath, min_length, max_length)
+    elif analysis_type == 'Fitting a population of tracks':
+        create_multi_window(analysis_window, path, savepath, min_length, max_length)
 
 def go_to_previous_window(window):
     window.destroy()
@@ -59,12 +66,12 @@ def show_error_url(window, message, url=None):
     previous_button = ttk.Button(error_window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=1, column=0)
 
-def create_brownian_window(window, path, savepath, length):
+def create_brownian_window(window, path, savepath, min_length, max_length):
     if not path.endswith('.csv'):
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.arange(min_length, max_length+1), dist_th=np.inf,
                                             frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                             colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                             remove_no_disp=True)
@@ -114,7 +121,7 @@ def create_brownian_window(window, path, savepath, length):
     savepath_button.grid(row=4, column=2)
 
     # Run Button
-    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_brownian_analysis(tracks, length, fixed_locerr_var.get(),
+    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_brownian_analysis(tracks, fixed_locerr_var.get(),
                                                                                               float(locerr_entry.get()), float(d_entry.get()),
                                                                                               int(epochs_entry.get()), savepath_entry.get()))
     run_button.grid(row=5, column=1, columnspan=2)
@@ -123,13 +130,13 @@ def create_brownian_window(window, path, savepath, length):
     previous_button = ttk.Button(window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=5, column=0, columnspan=1)
 
-def create_confined_window(window, path, savepath, length):
+def create_confined_window(window, path, savepath, min_length, max_length):
     if not path.endswith('.csv'):
         root.withdraw()
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.arange(min_length, max_length+1), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
@@ -191,7 +198,7 @@ def create_confined_window(window, path, savepath, length):
     savepath_button.grid(row=6, column=2)
     
     # Run Button
-    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_confined_analysis(tracks, length, fixed_locerr_var.get(),
+    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_confined_analysis(tracks, fixed_locerr_var.get(),
                                                                                               float(locerr_entry.get()), float(d_entry.get()),
                                                                                               float(q_entry.get()), float(l_entry.get()),
                                                                                               int(epochs_entry.get()), savepath_entry.get()))
@@ -201,17 +208,17 @@ def create_confined_window(window, path, savepath, length):
     previous_button = ttk.Button(window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=7, column=0, columnspan=1)
 
-def create_directed_window(window, path, savepath, length):
+def create_directed_window(window, path, savepath, min_length, max_length):
     if not path.endswith('.csv'):
         root.withdraw()
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.arange(min_length, max_length+1), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
-    
+        
     except Exception as e:
         root.withdraw()
         show_error_url(window, "The csv file could not be read correctly.\nVerify that your file has columns named: 'POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'\nFor more details, click here:", "https://github.com/FrancoisSimon/aTrack")
@@ -270,7 +277,7 @@ def create_directed_window(window, path, savepath, length):
     savepath_button.grid(row=6, column=2)
 
     # Run Button
-    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_directed_analysis(tracks, length, fixed_locerr_var.get(),
+    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_directed_analysis(tracks, fixed_locerr_var.get(),
                                                                                               float(locerr_entry.get()), float(d_entry.get()),
                                                                                               float(q_entry.get()), float(l_entry.get()),
                                                                                               int(epochs_entry.get()), savepath_entry.get()))
@@ -280,13 +287,13 @@ def create_directed_window(window, path, savepath, length):
     previous_button = ttk.Button(window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=7, column=0, columnspan=1)
 
-def create_multi_window(window, path, savepath, length):
+def create_multi_window(window, path, savepath, min_length, max_length):
     if not path.endswith('.csv'):
         root.withdraw()
         show_error_url(window, "Please select a csv file with an extention .csv\n", url=None)
         return
     try:
-        tracks, _, _ = atrack.read_table(path, lengths=np.array([length]), dist_th=np.inf,
+        tracks, _, _ = atrack.read_table(path, lengths=np.arange(min_length, max_length+1), dist_th=np.inf,
                                          frames_boundaries=[-np.inf, np.inf], fmt='csv',
                                          colnames=['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],
                                          remove_no_disp=True)
@@ -415,7 +422,7 @@ def create_multi_window(window, path, savepath, length):
     directed_q_entry.insert(tk.END, "0.01")
     
     # Run Button
-    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_multi_analysis(tracks, length, fixed_locerr_var.get(), int(min_nb_states_entry.get()), int(max_nb_states_entry.get()),
+    run_button = ttk.Button(window, text="Run Analysis", command=lambda: run_multi_analysis(tracks, fixed_locerr_var.get(), int(min_nb_states_entry.get()), int(max_nb_states_entry.get()),
                                                                                               float(confined_locerr_entry.get()), float(confined_d_entry.get()),
                                                                                               float(confined_q_entry.get()), float(confined_l_entry.get()),
                                                                                               float(directed_locerr_entry.get()), float(directed_d_entry.get()),
@@ -427,9 +434,9 @@ def create_multi_window(window, path, savepath, length):
     previous_button = ttk.Button(window, text="Previous", command=lambda: go_to_previous_window(window))
     previous_button.grid(row=10, column=0, columnspan=1)
 
-def run_brownian_analysis(tracks, length, fixed_locerr, locerr, d, nb_epochs, savepath):
+def run_brownian_analysis(tracks, fixed_locerr, locerr, d, nb_epochs, savepath):
     # Run the Brownian motion analysis
-    tracks = tracks[str(length)]
+    #tracks = tracks[str(length)]
 
     pd_params = atrack.Brownian_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d}, nb_epochs=nb_epochs)
@@ -437,25 +444,25 @@ def run_brownian_analysis(tracks, length, fixed_locerr, locerr, d, nb_epochs, sa
     pd_params.to_csv(savepath)
     print("Brownian motion analysis completed and results saved to %s."%savepath)
 
-def run_confined_analysis(tracks, length, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
+def run_confined_analysis(tracks, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
     # Run the confined motion analysis
-    tracks = tracks[str(length)]
+    #tracks = tracks[str(length)]
     pd_params = atrack.Confined_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d, 'q': q, 'l': l}, nb_epochs=nb_epochs)
     pd_params.to_csv(savepath)
     print("Confined motion analysis completed and results saved to %s."%savepath)
 
-def run_directed_analysis(tracks, length, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
+def run_directed_analysis(tracks, fixed_locerr, locerr, d, q, l, nb_epochs, savepath):
     # Run the directed motion analysis
-    tracks = tracks[str(length)]
+    #tracks = tracks[str(length)]
     pd_params = atrack.Directed_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr,
                                        Initial_params={'LocErr': locerr, 'd': d, 'q': q, 'l': l}, nb_epochs=nb_epochs)
     pd_params.to_csv(savepath)
     print("Directed motion analysis completed and results saved to %s."%savepath)
 
-def run_multi_analysis(tracks, length, fixed_locerr, min_nb_states, max_nb_states, confined_locerr, confined_d, confined_q, confined_l, directed_locerr, directed_d, directed_q, directed_l, nb_epochs, batch_size, savepath):
+def run_multi_analysis(tracks, fixed_locerr, min_nb_states, max_nb_states, confined_locerr, confined_d, confined_q, confined_l, directed_locerr, directed_d, directed_q, directed_l, nb_epochs, batch_size, savepath):
     # Run the multiple states analysis
-    tracks = tracks[str(length)]
+    #tracks = tracks[str(length)]
     likelihoods, all_pd_params = atrack.multi_fit(tracks, verbose=1, Fixed_LocErr=fixed_locerr, min_nb_states=min_nb_states, max_nb_states=max_nb_states, nb_epochs=nb_epochs, batch_size=batch_size, 
                                     Initial_confined_params={'LocErr': confined_locerr, 'd': confined_d, 'q': confined_q, 'l': confined_l},
                                     Initial_directed_params={'LocErr': directed_locerr, 'd': directed_d, 'q': directed_q, 'l': directed_l}, 
@@ -502,47 +509,35 @@ path_entry.insert(tk.END, os.getcwd())
 path_button = ttk.Button(root, text="Browse", command=browser)
 path_button.grid(row=0, column=2, padx = padx, pady = pady)
 
-# Length Input
-length_label = ttk.Label(root, text="Length:")
-length_label.grid(row=1, column=0, padx = padx, pady = pady)
-length_entry = ttk.Entry(root, width=10)
-length_entry.grid(row=1, column=1, padx = padx, pady = pady)
-length_entry.insert(tk.END, "99")
+# minimum Length Input
+min_length_label = ttk.Label(root, text="Minimum length:")
+min_length_label.grid(row=1, column=0, padx = padx, pady = pady)
+min_length_entry = ttk.Entry(root, width=10)
+min_length_entry.grid(row=1, column=1, padx = padx, pady = pady)
+min_length_entry.insert(tk.END, "20")
+
+# Maximum Length Input
+max_length_label = ttk.Label(root, text="Maximum length:")
+max_length_label.grid(row=2, column=0, padx = padx, pady = pady)
+max_length_entry = ttk.Entry(root, width=10)
+max_length_entry.grid(row=2, column=1, padx = padx, pady = pady)
+max_length_entry.insert(tk.END, "101")
 
 # Analysis Type Input
 analysis_type_label = ttk.Label(root, text="Analysis Type:")
-analysis_type_label.grid(row=2, column=0, padx = padx, pady = pady)
+analysis_type_label.grid(row=3, column=0, padx = padx, pady = pady)
 analysis_type_var = tk.StringVar(root)
 analysis_type_var.set("Fitting single tracks in Brownian motion")
 analysis_type_dropdown = ttk.OptionMenu(root, analysis_type_var, analysis_type_var.get(),
                                         "Fitting single tracks in Brownian motion",
                                         "Fitting single tracks in confined motion",
                                         "Fitting single tracks in directed motion",
-                                        "Fitting model with multiple states",
+                                        "Fitting a population of tracks",
                                         style='My.TMenubutton')
-analysis_type_dropdown.grid(row=2, column=1, padx = padx, pady = pady)
+analysis_type_dropdown.grid(row=3, column=1, padx = padx, pady = pady)
 
 # Next Button
 next_button = ttk.Button(root, text="Next", command=open_analysis_window)
-next_button.grid(row=3, column=0, columnspan=3, padx = padx, pady = pady)
+next_button.grid(row=4, column=0, columnspan=3, padx = padx, pady = pady)
 
 root.mainloop()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
