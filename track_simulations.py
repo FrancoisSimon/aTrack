@@ -31,9 +31,10 @@ def anomalous_diff_mixture(track_len=200,
     cum_Fs[0] = Fs[0]
     for state in range(1, nb_states):
         cum_Fs[state] = cum_Fs[state-1] + Fs[state]
-   
+    
     for kkk in range(nb_tracks):
         state = np.argmin(np.random.rand()>cum_Fs)
+        
         D, velocity, angular_D, conf_sub_force, conf_D, conf_dist = (Ds[state], velocities[state], angular_Ds[state], conf_sub_forces[state], conf_Ds[state], conf_dists[state])
        
         positions = np.zeros((track_len * nb_sub_steps, nb_dims))
@@ -68,9 +69,12 @@ def anomalous_diff_mixture(track_len=200,
         #if nb_blurring_sub_steps==1:
         #    final_track += np.random.normal(0, LocErr, (track_len, nb_dims))
        
-        if kkk ==0:
+        if kkk == 0:
             final_tracks = typed.List([final_track])
+            states = typed.List([state])
         else:
             final_tracks.append(final_track)
-    return final_tracks
+            states.append(state)
+    return final_tracks, states
+
 
