@@ -104,7 +104,7 @@ def read_table(paths, # path of the file to read or list of paths to read multip
         
     for l in list(tracks.keys()):
         if len(tracks[str(l)])>0:
-            print(l)
+            #print(l)
             tracks[str(l)] = np.array(tracks[str(l)])
             frames[str(l)] = np.array(frames[str(l)])
             for m in opt_colnames:
