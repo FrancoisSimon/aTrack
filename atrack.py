@@ -1988,8 +1988,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     tracks_tf = tf.repeat(tf.constant(tracks[:,:,None, :nb_dims], dtype = dtype), nb_conf_states + nb_dir_states, 2)
     
     inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
-    inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
-    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), dtype = dtype)
     
     outputs = []
     
