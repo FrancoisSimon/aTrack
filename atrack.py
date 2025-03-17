@@ -2166,7 +2166,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     final_l[final_states=='Dir'] = final_l[final_states=='Dir']*2**0.5
     final_fractions = tf.math.softmax(F_layer.weights).numpy()[:,0].T
     
-    pd_params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'state', 'fraction'])
+    pd_params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'type', 'fraction'])
     
     all_pd_params[str(nb_states)] = pd_params
     
