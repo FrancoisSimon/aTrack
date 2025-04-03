@@ -21,7 +21,8 @@ def read_table(paths, # path of the file to read or list of paths to read multip
                fmt = 'csv', # format of the document to be red, 'csv' or 'pkl', one can also just specify a separator e.g. ' '. 
                colnames = ['POSITION_X', 'POSITION_Y', 'FRAME', 'TRACK_ID'],  # if multiple columns are required to identify a track, the string used to identify the track ID can be replaced by a list of strings represening the column names e.g. ['TRACK_ID', 'Movie_ID']
                opt_colnames = [], # list of additional metrics to collect e.g. ['QUALITY', 'ID']
-               remove_no_disp = True):
+               remove_no_disp = True,
+               split_long_tracks = False):
     
     if type(paths) == str or type(paths) == np.str_:
         paths = [paths]
@@ -86,14 +87,22 @@ def read_table(paths, # path of the file to read or list of paths to read multip
                             frames[str(l)].append(track_mat[:, 2])
                             for m in opt_colnames:
                                 opt_metrics[m][str(l)].append(track[m].values)
-        
                         elif len(track_mat) > np.max(lengths):
-                            l = np.max(lengths)
-                            tracks[str(l)].append(track_mat[:l, 0:2])
-                            frames[str(l)].append(track_mat[:l, 2])
-                            for m in opt_colnames:
-                                opt_metrics[m][str(l)].append(track[m].values[:l]) 
-                        
+                            if split_long_tracks:
+                                l = np.max(lengths)
+                                for k in range(len(track_mat)//np.max(lengths)):
+                                    l = np.max(lengths)
+                                    tracks[str(l)].append(track_mat[l*k:l*(k+1), 0:2])
+                                    frames[str(l)].append(track_mat[l*k:l*(k+1), 2])
+                                    for m in opt_colnames:
+                                        opt_metrics[m][str(l)].append(track[m].values[l*k:l*(k+1)]) 
+                            else:
+                                l = np.max(lengths)
+                                tracks[str(l)].append(track_mat[:l, 0:2])
+                                frames[str(l)].append(track_mat[:l, 2])
+                                for m in opt_colnames:
+                                    opt_metrics[m][str(l)].append(track[m].values[:l]) 
+                            
                         elif len(track_mat) < np.max(lengths) and len(track_mat) > np.min(lengths) : # in case where lengths between min(lengths) and max(lentghs) are not all present:
                             l_idx =   np.argmin(np.floor(len(track_mat) / lengths))-1
                             l = lengths[l_idx]
@@ -104,7 +113,7 @@ def read_table(paths, # path of the file to read or list of paths to read multip
         
     for l in list(tracks.keys()):
         if len(tracks[str(l)])>0:
-            #print(l)
+            print(l)
             tracks[str(l)] = np.array(tracks[str(l)])
             frames[str(l)] = np.array(frames[str(l)])
             for m in opt_colnames:
@@ -130,6 +139,7 @@ def read_table(paths, # path of the file to read or list of paths to read multip
             opt_metric_lists[m] += list(opt_metrics[m][l])
 
     return track_list, frame_list, opt_metric_lists
+
 
 def padding(track_list, fitting_type = 'All'):
     '''
@@ -669,7 +679,6 @@ def Directed_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
         return pd_params#est_LocErrs, est_ds, est_qs, est_ls, LP
     else:
         return est_LocErrs, est_ds, est_qs, est_ls, LP, mean_pred_kis
-
 
 '''
 Confined diffusion
@@ -1885,7 +1894,7 @@ def Brownian_LP(inputs, nb_dims = 2, Fixed_LocErr = True, Initial_params = {'Loc
     return LP
 '''
 
-def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_nb_states = 10, nb_epochs = 1000, batch_size = 2**11,
+def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_nb_states = 10, nb_epochs = 1000, batch_size = 2**8,
                Initial_confined_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                Initial_directed_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                fitting_type = 'All'
@@ -1919,6 +1928,9 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         Initial guess for the first step of the method. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
     Initial_directed_params : TYPE, optional
         DESCRIPTION. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
+    fitting_type = string, optional
+       If 'All', fits tracks of at least 5 time points to both confined and directed models
+
 
     Returns
     -------
@@ -1927,11 +1939,19 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     
     all_pd_params = {}
     
-    est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = nb_epochs, output_type = 'arrays')
-    est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks, verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = nb_epochs, output_type = 'arrays')
+    fact = len(tracks)//(batch_size*2)
     
+    est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks[:max_nb_states*batch_size], verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = nb_epochs*fact, output_type = 'arrays')
+    est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks[:max_nb_states*batch_size], verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = nb_epochs*fact, output_type = 'arrays')
+
     mask = LP < LP2
-    #mask = mask
+    if fitting_type == 'Confined':
+        mask[:] = True
+    elif fitting_type == 'Directed':
+        mask[:] = False
+    else:
+        raise ValueError("Wrong fitting type. Chose between 'All', 'Confined' and 'Directed'")
+        #mask = mask
     
     est_LocErrs[mask] = est_LocErrs2[mask]
     est_ds[mask] = est_ds2[mask]
@@ -1969,10 +1989,10 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     
     #Conf_params = denorm_centers[:2]
     
-    Conf_params = denorm_centers[denorm_centers[:,2]<0]
-    Conf_params[:,2] = - Conf_params[:,2]
-    Dir_params = denorm_centers[denorm_centers[:,2]>=0]
-    
+    Conf_params = denorm_centers[denorm_centers[:,2]>0]
+    Dir_params = denorm_centers[denorm_centers[:,2]<=0]
+    Dir_params[:,2] = - Dir_params[:,2]
+
     nb_conf_states = len(Conf_params)
     nb_dir_states = len(Dir_params)
     
@@ -1988,8 +2008,10 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     tracks_tf = tf.repeat(tf.constant(tracks[:,:,None, :nb_dims], dtype = dtype), nb_conf_states + nb_dir_states, 2)
     
     inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
+    #inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
     input_mask = tf.keras.Input(shape=(tracks.shape[1]), dtype = dtype)
-    
+
     outputs = []
     
     if nb_conf_states > 0:
@@ -2117,6 +2139,10 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
     
+    adam = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
+    model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs//3, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    
     #history_number = 80 # 32 bit
     history_number = 5 # 64 bit
     
@@ -2214,6 +2240,10 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         history = alternative_model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) #, callbacks=[model_checkpoint_callback])
         #alternative_model.load_weights('D:/anomalous/5_states/best_weights.h5')
         
+        adam = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
+        alternative_model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
+        history = alternative_model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs//3, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) #, callbacks=[model_checkpoint_callback])
+        #alternative_model.load_weights('D:/anomalous/5_states/best_weights.h5')
         #LPs = alternative_model.predict_on_batch(tracks_tf)
         #sum_LPs = - MLE_loss(LPs, LPs)
         #sum_LP = tf.math.reduce_sum(tf.cast(sum_LPs, dtype = 'float64')).numpy()
@@ -2259,4 +2289,4 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     
     return likelihoods, all_pd_params
 
-
+	
