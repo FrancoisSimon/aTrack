@@ -77,7 +77,6 @@ def read_table(paths, # path of the file to read or list of paths to read multip
                 track = track.sort_values(colnames[2], axis = 0)
                 track_mat = track.values[:,:3].astype('float64')
                 dists2 = (track_mat[1:, :2] - track_mat[:-1, :2])**2
-		dists = np.sum(dists2, axis = 1)**0.5
                 if remove_no_disp:
                     if np.mean(dists2==0)>0.05:
                         continue
