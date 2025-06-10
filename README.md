@@ -2,7 +2,7 @@ aTrack
 -------
 
 aTrack is a method to detemine the state of motion of particles. The stand-alone version of aTrack is available at [https://zenodo.org/records/10994586](https://zenodo.org/records/11075336).
-For more information about the Stand-alone version of aTrack, see the [Wiki](https://github.com/FrancoisSimon/aTrack/wiki) section of this GitHub page.
+For more information about the Stand-alone version of aTrack, see the [Wiki](https://github.com/FrancoisSimon/aTrack/wiki) section of this GitHub page. The python package enables to analyze 1D, 2D and 3D tracks while the Stand alone package is limited to 2D tracks.
 
 This readme file focuses on the python implementation of aTrack.
 
@@ -165,6 +165,9 @@ Outputs:
 - `all_frames`: dictionary descibing the frame numbers of each peak of all tracks with track length as keys (number of time positions, e.g. '23') of 2D arrays: dim 0 = track, dim 1 = time position.
 - `optional_metrics`: dictionary describing the optional metrics specified by opt_colnames for each peak of all tracks with the same format as the other outputs, track length as keys (number of time positions, e.g. '23') of 3D arrays: dim 0 = track, dim 1 = time position, dim 2 = optional metrics (same length as the length of the list opt_colnames).
 
+## Localization error
+
+The localization error is handled as a parameter that measures the spread between the real particle positions and the observed particle positions. Each state has its own localization error and currently (06/2025), the localization error is the same for all spatial dimensions.
 
 ## Caveats
 
@@ -183,6 +186,7 @@ This program is released under the GNU General Public License version 3 or upper
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 
 # Parallelization
 GPU parallelization is made available thanks to the tensorflow library. When analyzing small data sets, using CPU computing may be faster. To do so, one can use the following command `with tf.device('/CPU:0'):`.
