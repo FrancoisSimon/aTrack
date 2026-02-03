@@ -1953,7 +1953,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         mask[:] = True
     elif fitting_type == 'Directed':
         mask[:] = False
-    else:
+    elif fitting_type != 'All':
         raise ValueError("Wrong fitting type. Chose between 'All', 'Confined' and 'Directed'")
         #mask = mask
     
