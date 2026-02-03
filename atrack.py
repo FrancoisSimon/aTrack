@@ -1933,11 +1933,12 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         DESCRIPTION. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
     fitting_type = string, optional
        If 'All', fits tracks of at least 5 time points to both confined and directed models
-
+       can be set to 'Directed' or 'Confined' to assume either only directed states or confined states
 
     Returns
     -------
-    TYPE
+    likelihoods: likelihood as a function of the number of states (pandas dataframe)
+	all_pd_params: dictionary of the model parameters as a function of the number of states (pandas dataframe)
     '''
     
     all_pd_params = {}
