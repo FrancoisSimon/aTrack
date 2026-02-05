@@ -972,12 +972,12 @@ def Confined_fit(tracks, verbose = 1, Fixed_LocErr = True, Initial_params = {'Lo
         
     def MLE_loss(y_true, y_pred): # y_pred = log likelihood of the tracks shape (None, 1)
         return - tf.math.reduce_sum(y_pred, axis=-1)
-    
+    '''
     # model.compile(loss=MLE_loss, optimizer='adam')
     adam = tf.keras.optimizers.Adam(learning_rate=0.9, beta_1=0.1, beta_2=0.1) # we use a first set of parameters with hight learning_rate and low beta values to accelerate initial learning
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = 20, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
-    
+    '''
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99) # after the first learning step, the parameter estimates are not too bad and we can use more classical beta parameters
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit([tracks[:nb_tracks,:,:input_size], mask], tracks[:nb_tracks,:,:input_size], epochs = nb_epochs, batch_size = nb_tracks, shuffle=False, verbose = verbose) #, callbacks  = [l_callback])
@@ -1256,7 +1256,7 @@ class Directed_Initial_layer_multi(tf.keras.layers.Layer):
         return inputs, initial_state
     
     def get_parameters(self):
-        return np.exp(self.Log_LocErr2)[0]**0.5, np.exp(self.Log_d2)[0]**0.5, np.exp(self.Log_q2)[0]**0.5, np.exp(self.Log_l2)[0]**0.5*2**0.5
+        return np.exp(self.Log_LocErr2)[0]**0.5, np.exp(self.Log_d2)[0]**0.5, np.exp(self.Log_l2)[0]**0.5*2**0.5, np.exp(self.Log_q2)[0]**0.5
 
 class Directed_RNNCell_multi(tf.keras.layers.Layer):
     
@@ -1537,7 +1537,7 @@ class Confinement_Initial_layer_multi(tf.keras.layers.Layer):
         q = np.min([[self.Initial_params['q'], 0.9*d[0]]], 1)
         l = np.array([self.Initial_params['l']])
         LocErr = np.array([self.Initial_params['LocErr']])
-
+        
         self.Log_d2 = tf.Variable(2*np.log(d)[:,:,None], dtype = dtype, name = 'Log_d2', constraint=lambda x: tf.clip_by_value(x, clipping_value, np.inf))
         q = np.min([q, 0.9*d], 0)
         self.invsig_q2 = tf.Variable(inverse_sigmoid(q**2/d**2)[:,:,None], dtype = dtype, name = 'Log_q2', constraint=lambda x: tf.clip_by_value(x, inverse_sigmoid(1e-10), inverse_sigmoid(1-1e-10)))
@@ -1622,7 +1622,8 @@ class Confinement_Initial_layer_multi(tf.keras.layers.Layer):
         l = np.array(self.sigmoid(self.invsig_l))[0]
         cor_l = -np.log(1-l)
         cor_d = l/cor_l * d2[0]**0.5
-        return np.exp(self.Log_LocErr2)[0]**0.5, cor_d, np.array((self.sigmoid(self.invsig_q2)*d2)**0.5)[0], cor_l
+        return np.exp(self.Log_LocErr2)[0]**0.5, cor_d, cor_l, np.array((self.sigmoid(self.invsig_q2)*d2)**0.5)[0]
+
 
 class Confinement_RNNCell_multi(tf.keras.layers.Layer):
    
@@ -1900,8 +1901,7 @@ def Brownian_LP(inputs, nb_dims = 2, Fixed_LocErr = True, Initial_params = {'Loc
 def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_nb_states = 10, nb_epochs = 1000, batch_size = 2**8,
                Initial_confined_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
                Initial_directed_params = {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01},
-               fitting_type = 'All'
-               ):
+               fitting_type = 'All'):
     '''
     Fit models with multiple states and vary the number of states to determine which number of states is best suited to the 
     data set and to retrieve the multi-state model parameters.
@@ -1932,36 +1932,39 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     Initial_directed_params : TYPE, optional
         DESCRIPTION. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
     fitting_type = string, optional
-       If 'All', fits tracks of at least 5 time points to both confined and directed models
+       If 'All', fits tracks of at least 5 time points to both confined and directed models.
        can be set to 'Directed' or 'Confined' to assume either only directed states or confined states
+
 
     Returns
     -------
     likelihoods: likelihood as a function of the number of states (pandas dataframe)
 	all_pd_params: dictionary of the model parameters as a function of the number of states (pandas dataframe)
+    
     '''
     
     all_pd_params = {}
     
     fact = len(tracks)//(batch_size*2)
     
-    est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks[:max_nb_states*batch_size], verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = nb_epochs*fact, output_type = 'arrays')
-    est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks[:max_nb_states*batch_size], verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = nb_epochs*fact, output_type = 'arrays')
-
+    init_nb_epochs = max(nb_epochs*fact, 200)
+    
+    est_LocErrs, est_ds, est_qs, est_ls, LP = Confined_fit(tracks[:max_nb_states*batch_size], verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, nb_epochs = init_nb_epochs, output_type = 'arrays')
+    est_LocErrs2, est_ds2, est_qs2, est_ls2, LP2, pred_kis = Directed_fit(tracks[:max_nb_states*batch_size], verbose = verbose, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, nb_epochs = init_nb_epochs, output_type = 'arrays')
+    
     mask = LP < LP2
     if fitting_type == 'Confined':
-        mask[:] = True
-    elif fitting_type == 'Directed':
         mask[:] = False
+    elif fitting_type == 'Directed':
+        mask[:] = True
     elif fitting_type != 'All':
         raise ValueError("Wrong fitting type. Chose between 'All', 'Confined' and 'Directed'")
-        #mask = mask
-    
+
     est_LocErrs[mask] = est_LocErrs2[mask]
     est_ds[mask] = est_ds2[mask]
     est_qs[mask] = est_qs2[mask]
-    est_ls[mask] = est_ls2[mask]
-    est_ls[mask==False] = - est_ls[mask==False]
+    est_ls[mask] = - est_ls2[mask]
+    #est_ls[mask==False] = - est_ls[mask==False]
     
     if Fixed_LocErr == True:
         params = np.concatenate((np.log(est_ds), np.log(est_qs), est_ls), -1)
@@ -2008,14 +2011,14 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         padding_mask = np.ones(tracks.shape[:2])
     
     nb_tracks, track_len, nb_dims = tracks.shape
-
+    
     tracks_tf = tf.repeat(tf.constant(tracks[:,:,None, :nb_dims], dtype = dtype), nb_conf_states + nb_dir_states, 2)
     
     inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
     #inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
     input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
     input_mask = tf.keras.Input(shape=(tracks.shape[1]), dtype = dtype)
-
+    
     outputs = []
     
     if nb_conf_states > 0:
@@ -2096,16 +2099,20 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         def build(self, input_shape):
             if not self.built:
                 self.Fractions = tf.Variable(initial_value=np.ones(self.nb_states)[None]/self.nb_states, trainable=True, name="Fractions", dtype = dtype)
+                self.use_fraction = False
             self.built = True
             #super(Fractions_Layer, self).build(input_shape)  # Be sure to call this at the end
     
         def call(self, x):
-            F_P =  tf.math.log(tf.math.softmax(self.Fractions))
-            return x + F_P
+            if self.use_fraction == True:
+                F_P =  tf.math.log(tf.math.softmax(self.Fractions))
+                return x + F_P
+            else:
+                return x
     
     F_layer = Fractions_Layer(nb_conf_states + nb_dir_states, dtype = dtype)
     F_outputs = F_layer(outputs)
-    
+        
     model = tf.keras.Model(inputs=[inputs, input_mask], outputs=F_outputs, name="Diffusion_model")
     
     if verbose > 0:
@@ -2115,11 +2122,19 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     def MLE_loss(y_true, y_pred): # y_pred = log likelihood of the tracks shape (None, 1)
         #print(y_pred)
         nb_states = y_pred.shape[1]
+        
         max_LPs = tf.math.reduce_max(y_pred, 1, keepdims = True)
         #sum_LP_layers = tf.math.log(tf.math.reduce_sum(tf.cast(tf.math.exp(y_pred - max_LPs), dtype = 'float64'), axis=-1, keepdims = False)/nb_states) + tf.cast(max_LPs[:, 0], , dtype = 'float64')
         sum_LP_layers = tf.math.log(tf.math.reduce_sum(tf.math.exp(tf.cast(y_pred - max_LPs, dtype = dtype)), axis=-1, keepdims = False)) + tf.cast(max_LPs[:, 0], dtype = dtype)
         return - sum_LP_layers # sum over the spatial dimensions axis
-    
+    '''
+    def MLE_loss(y_true, y_pred): # y_pred = log likelihood of the tracks shape (None, 1)
+        #print(y_pred)
+        nb_states = y_pred.shape[1]
+        #sum_LP_layers = tf.math.log(tf.math.reduce_sum(tf.cast(tf.math.exp(y_pred - max_LPs), dtype = 'float64'), axis=-1, keepdims = False)/nb_states) + tf.cast(max_LPs[:, 0], , dtype = 'float64')
+        sum_LP_layers = tf.math.reduce_sum(tf.cast(y_pred, dtype = dtype), axis=-1, keepdims = False)
+        return - sum_LP_layers # sum over the spatial dimensions axis
+    '''
     '''
     checkpoint_filepath = 'D:/anomalous/5_states/best_weights.h5'
     
@@ -2130,14 +2145,10 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
                                                                    save_best_only=True)
     '''
     #print('fit:')
-    
-    adam = tf.keras.optimizers.Adam(learning_rate=0.5, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
-    model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = 50, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
-    
+        
     adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
-    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = 50, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs//4, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
     
     adam = tf.keras.optimizers.Adam(learning_rate=0.01, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
@@ -2146,6 +2157,14 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     adam = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
     model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
     history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs//3, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    
+    dir_LocErrs, dir_ds, dir_ls, dir_qs, conf_LocErrs, conf_ds, conf_qs, conf_ls = [[]]*8
+    
+    for layer in model.layers:
+        if isinstance(layer, Directed_Initial_layer_multi):
+            dir_LocErrs, dir_ds, dir_ls, dir_qs = layer.get_parameters()
+        elif isinstance(layer, Confinement_Initial_layer_multi):
+            conf_LocErrs, conf_ds, conf_ls, conf_qs  = layer.get_parameters()
     
     #history_number = 80 # 32 bit
     history_number = 5 # 64 bit
@@ -2292,5 +2311,230 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
     likelihoods['number_of_states'] = likelihoods['number_of_states'].astype(int)
     
     return likelihoods, all_pd_params
+
+def sigmoid(x):
+    return 1/(1+tf.math.exp(-x))
+
+def multi_fit_fixed_nb_states(tracks, verbose = 1, Fixed_LocErr = True, nb_states = 5, nb_epochs = 400, batch_size = 1000,
+               Initial_confined_params = {'LocErr': [0.02, 0.02, 0.02], 
+                                          'd': [0, 0.06, 0.06], 'q': [0.01,0.01,0.01], 'l':[0.1, 0.1, 0.01]},
+               Initial_directed_params = {'LocErr': [0.02, 0.02], 'd': [0.1, 0.], 'q': [0.01, 0.01], 'l': [0.01, 0.01]}):
+    '''
+    Fit models with multiple states and vary the number of states to determine which number of states is best suited to the 
+    data set and to retrieve the multi-state model parameters.
+    Here, in a first fitting step, we estimate the parameters of individual tracks. We then cluster tracks with close parameters
+    to form `max_nb_states` states whose parameters are the average of the parameters of their tracks.
+    Then, multi-state fitting is performed on the full data set. the log likelihood is computed and stored and the
+    state with the list impact on the likelihood is removed. The number of states is further reduced until the 
+    number of states of the model reaches the value `min_nb_states`.
+    
+    Parameters
+    ----------
+    tracks : numpy array
+         array of tracks of dims (track, time point, spatial axis).
+    verbose : int, optional
+        print model and fitting infos if 1. The default is 1.
+    Fixed_LocErr : bool, optional
+        If True fixes the the localization error based on a prior estimate, this can be important to do if there is no immobile state. The default is True.
+    max_nb_states: int, optional
+        maximum number of states
+    min_nb_states : int, optional
+        Initial and minimal number of states used for the clustering. If there is no decrease of the number of states between the clustering phase and the reduction phase 
+    nb_epochs : TYPE, optional
+        DESCRIPTION. The default is 1000.
+    batch_size: int
+        Number of tracks considered per batch to avoid memory issues when dealing with big data sets.
+    Initial_confined_params : TYPE, optional
+        Initial guess for the first step of the method. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
+    Initial_directed_params : TYPE, optional
+        DESCRIPTION. The default is {'LocErr': 0.02, 'd': 0.1, 'q': 0.01, 'l': 0.01}.
+    fitting_type = string, optional
+       If 'All', fits tracks of at least 5 time points to both confined and directed models.
+       can be set to 'Directed' or 'Confined' to assume either only directed states or confined states
+
+
+    Returns
+    -------
+    likelihoods: likelihood as a function of the number of states (pandas dataframe)
+	all_pd_params: dictionary of the model parameters as a function of the number of states (pandas dataframe)
+    
+    '''
+    np.exp(3.03)
+    nb_conf_states = len(Initial_confined_params['LocErr'])
+    nb_dir_states = len(Initial_directed_params['LocErr'])
+    
+    if nb_conf_states == 0:
+        fitting_type = 'Confined'
+    elif nb_dir_states == 0:
+        fitting_type = 'Directed'
+    else:
+        fitting_type = 'All'
+        
+    #max_nb_states = np.max([nb_conf_states, nb_dir_states])
+    
+    if type(tracks) == list:
+        tracks, padding_mask = padding(tracks, fitting_type = fitting_type)
+    elif type(tracks) == np.ndarray:
+        padding_mask = np.ones(tracks.shape[:2])
+    
+    nb_tracks, track_len, nb_dims = tracks.shape
+    
+    tracks_tf = tf.repeat(tf.constant(tracks[:,:,None, :nb_dims], dtype = dtype), nb_conf_states + nb_dir_states, 2)
+    
+    inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
+    #inputs = tf.keras.Input(shape=(None, nb_conf_states + nb_dir_states, nb_dims), dtype = dtype)
+    
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), batch_size = nb_tracks, dtype = dtype)
+    input_mask = tf.keras.Input(shape=(tracks.shape[1]), dtype = dtype)
+    
+    #inputs = tracks_tf
+    #input_mask = padding_mask
+    
+    outputs = []
+    
+    if nb_conf_states > 0:
+        
+        Conf_inputs = inputs[:,:,:nb_conf_states]
+        Conf_layer1 = Confinement_Initial_layer_multi(nb_states = nb_conf_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_confined_params, dtype = dtype)
+        Conf_tensor1, Conf_initial_state = Conf_layer1(Conf_inputs, nb_dims)
+        Conf_cell = Confinement_RNNCell_multi([tf.TensorShape([nb_conf_states]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, nb_dims])], Conf_layer1, nb_dims, dtype = dtype) # n
+        Conf_RNN_layer = multi_Confinement_RNN(Conf_cell, return_state = True, dtype = dtype)
+        Conf_tensor2 = Conf_RNN_layer(Conf_tensor1[:,3:-1], initial_state = Conf_initial_state, mask = input_mask[:,3:-1])
+        Conf_prev_outputs = Conf_tensor2[1:]
+        Conf_layer3 = Confinement_Final_layer_multi(Conf_layer1, nb_dims, dtype = dtype)
+        Conf_LP = Conf_layer3(Conf_inputs[:,-1], Conf_prev_outputs)
+        
+        '''
+        Conf_inputs = inputs[:,:,:nb_conf_states]
+        Conf_layer1 = Confinement_Initial_layer_multi(nb_states = nb_conf_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_conf_params, dtype = dtype)
+        Conf_tensor1, Conf_initial_state = Conf_layer1(Conf_inputs, nb_dims)
+        Conf_cell = Confinement_RNNCell_multi([tf.TensorShape([nb_conf_states]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, 1]), tf.TensorShape([nb_conf_states, nb_dims]), tf.TensorShape([nb_conf_states, nb_dims])], Conf_layer1, nb_dims, dtype = dtype) # n
+        Conf_RNN_layer = RNN(Conf_cell, return_state = True, dtype = dtype)
+        Conf_tensor2 = Conf_RNN_layer(Conf_tensor1[:,3:-1], initial_state = Conf_initial_state)
+        Conf_prev_outputs = Conf_tensor2[1:]
+        Conf_layer3 = Confinement_Final_layer_multi(Conf_layer1, nb_dims, dtype = dtype)
+        Conf_LP = Conf_layer3(Conf_inputs[:,-1], Conf_prev_outputs)
+        '''
+        outputs.append(Conf_LP)
+    
+    if nb_dir_states > 0:
+        
+        Dir_inputs = inputs[:,:, nb_conf_states:]
+
+        Dir_layer1 = Directed_Initial_layer_multi(nb_states = nb_dir_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_directed_params, dtype = dtype)
+        Dir_tensor1, Dir_initial_state = Dir_layer1(Dir_inputs, nb_dims)
+        Dir_cell = Directed_RNNCell_multi([tf.TensorShape([nb_dir_states]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1])], Dir_layer1, nb_dims, dtype = dtype) # n
+        Dir_RNN_layer = multi_Directed_RNN(Dir_cell, return_state = True, dtype = dtype)
+        Dir_tensor2 = Dir_RNN_layer(Dir_tensor1[:,2:-2], initial_state = Dir_initial_state, mask = input_mask[:,2:-2])
+        Dir_prev_outputs = Dir_tensor2[1:]
+        Dir_layer3 = Directed_Final_layer_multi(Dir_layer1, nb_dims, dtype = dtype)
+        #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
+        Dir_LP = Dir_layer3(Dir_inputs[:,:], Dir_prev_outputs)
+        
+        '''
+        Dir_inputs = inputs[:,:, nb_conf_states:]
+        Dir_layer1 = Directed_Initial_layer_multi(nb_states = nb_dir_states, Fixed_LocErr = Fixed_LocErr, Initial_params = Initial_dir_params, dtype = dtype)
+        Dir_tensor1, Dir_initial_state = Dir_layer1(Dir_inputs, nb_dims)
+        Dir_cell = Directed_RNNCell_multi([tf.TensorShape([nb_dir_states]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, 1]), tf.TensorShape([nb_dir_states, nb_dims]), tf.TensorShape([nb_dir_states, 1])], Dir_layer1, nb_dims, dtype = dtype) # n
+        Dir_RNN_layer = tf.keras.layers.RNN(Dir_cell, return_state = True, dtype = dtype)
+        Dir_tensor2 = Dir_RNN_layer(Dir_tensor1[:,2:-2], initial_state = Dir_initial_state)
+        Dir_prev_outputs = Dir_tensor2[1:]
+        Dir_layer3 = Directed_Final_layer_multi(Dir_layer1, nb_dims, dtype = dtype)
+        #LP, estimated_ds, estimated_qs, estimated_ls, estimated_LocErrs = layer3(inputs[:,:], prev_outputs)
+        Dir_LP = Dir_layer3(Dir_inputs, Dir_prev_outputs)'''
+        outputs.append(Dir_LP)
+    
+    state_list = np.array(['Conf']*nb_conf_states + ['Dir']*nb_dir_states)
+    outputs = tf.concat(outputs, axis = 1)
+    
+    class Fractions_Layer(tf.keras.layers.Layer):
+        def __init__(self, nb_states, **kwargs):
+            #super(Fractions_Layer, self).__init__(**kwargs)
+            self.nb_states = nb_states
+            super().__init__(**kwargs)
+        
+        def build(self, input_shape):
+            if not self.built:
+                self.Fractions = tf.Variable(initial_value=np.ones(self.nb_states)[None]/self.nb_states, trainable=True, name="Fractions", dtype = dtype)
+                self.use_fraction = True
+            self.built = True
+            #super(Fractions_Layer, self).build(input_shape)  # Be sure to call this at the end
+    
+        def call(self, x):
+            if self.use_fraction == True:
+                F_P =  tf.math.log(tf.math.softmax(self.Fractions))
+                return x + F_P
+            else:
+                return x
+    
+    F_layer = Fractions_Layer(nb_conf_states + nb_dir_states, dtype = dtype)
+    F_outputs = F_layer(outputs)
+        
+    model = tf.keras.Model(inputs=[inputs, input_mask], outputs=F_outputs, name="Diffusion_model")
+    
+    if verbose > 0:
+        model.summary()
+    # model.compile(loss=MLE_loss, optimizer='adam')
+    
+    def MLE_loss(y_true, y_pred): # y_pred = log likelihood of the tracks shape (None, 1)
+        #print(y_pred)
+        nb_states = y_pred.shape[1]
+        
+        max_LPs = tf.math.reduce_max(y_pred, 1, keepdims = True)
+        #sum_LP_layers = tf.math.log(tf.math.reduce_sum(tf.cast(tf.math.exp(y_pred - max_LPs), dtype = 'float64'), axis=-1, keepdims = False)/nb_states) + tf.cast(max_LPs[:, 0], , dtype = 'float64')
+        sum_LP_layers = tf.math.log(tf.math.reduce_sum(tf.math.exp(tf.cast(y_pred - max_LPs, dtype = dtype)), axis=-1, keepdims = False)) + tf.cast(max_LPs[:, 0], dtype = dtype)
+        return - sum_LP_layers # sum over the spatial dimensions axis
+    '''
+    def MLE_loss(y_true, y_pred): # y_pred = log likelihood of the tracks shape (None, 1)
+        #print(y_pred)
+        nb_states = y_pred.shape[1]
+        #sum_LP_layers = tf.math.log(tf.math.reduce_sum(tf.cast(tf.math.exp(y_pred - max_LPs), dtype = 'float64'), axis=-1, keepdims = False)/nb_states) + tf.cast(max_LPs[:, 0], , dtype = 'float64')
+        sum_LP_layers = tf.math.reduce_sum(tf.cast(y_pred, dtype = dtype), axis=-1, keepdims = False)
+        return - sum_LP_layers # sum over the spatial dimensions axis
+    '''
+    '''
+    checkpoint_filepath = 'D:/anomalous/5_states/best_weights.h5'
+    
+    model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_filepath,
+                                                                   save_weights_only=True,
+                                                                   monitor='loss',
+                                                                   mode='auto',
+                                                                   save_best_only=True)
+    '''
+    #print('fit:')
+    
+    adam = tf.keras.optimizers.Adam(learning_rate=0.5, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
+    model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs//2, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    
+    F_layer.use_fraction = True
+    
+    adam = tf.keras.optimizers.Adam(learning_rate=0.1, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
+    model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs//4, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    
+    adam = tf.keras.optimizers.Adam(learning_rate=0.02, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
+    model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    
+    adam = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.99, epsilon=1e-20)
+    model.compile(loss=MLE_loss, optimizer=adam, jit_compile = True)
+    history = model.fit([tracks_tf, padding_mask], tracks_tf, epochs = nb_epochs//3, batch_size = min(batch_size, nb_tracks), shuffle=False, verbose = verbose) # , callbacks=[model_checkpoint_callback]
+    
+    tf.math.softmax(model.weights[-1])
+    dir_LocErrs, dir_ds, dir_ls, dir_qs, conf_LocErrs, conf_ds, conf_qs, conf_ls = [[]]*8
+    
+    for layer in model.layers:
+        if isinstance(layer, Directed_Initial_layer_multi):
+            dir_LocErrs, dir_ds, dir_ls, dir_qs = layer.get_parameters()
+        elif isinstance(layer, Confinement_Initial_layer_multi):
+            conf_LocErrs, conf_ds, conf_ls, conf_qs  = layer.get_parameters()
+    
+    #history_number = 80 # 32 bit
+    history_number = 5 # 64 bit
+    
+    params = pd.DataFrame(np.concatenate((np.arange(nb_states)[:,None], final_LocErr, final_d, final_q, final_l, final_states[:,None], final_fractions), axis = 1), columns = ['state', 'LocErr', 'd', 'q', 'l', 'type', 'fraction'])
+    
+    return model, likelihood, params
 
 	
