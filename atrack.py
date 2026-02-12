@@ -2099,7 +2099,7 @@ def multi_fit(tracks, verbose = 1, Fixed_LocErr = True, min_nb_states = 1, max_n
         def build(self, input_shape):
             if not self.built:
                 self.Fractions = tf.Variable(initial_value=np.ones(self.nb_states)[None]/self.nb_states, trainable=True, name="Fractions", dtype = dtype)
-                self.use_fraction = False
+                self.use_fraction = True
             self.built = True
             #super(Fractions_Layer, self).build(input_shape)  # Be sure to call this at the end
     
